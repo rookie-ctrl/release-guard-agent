@@ -1,0 +1,11 @@
+target/
+data/
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
+.env
+.env.*
+!.env.example
+简历.pdf

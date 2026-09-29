@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReleaseGuard 发布评审 Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #f5f6f8; color: #222; min-height: 100vh;
+        }
+        header {
+            background: #1f2937; color: #fff; padding: 16px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        header h1 { font-size: 18px; font-weight: 600; }
+        header .stats { font-size: 13px; color: #9ca3af; }
+        .container { display: flex; gap: 16px; padding: 16px 24px; height: calc(100vh - 70px); }
+        .panel {
+            background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+            display: flex; flex-direction: column; overflow: hidden;
+        }
+        .left { width: 320px; flex-shrink: 0; }
+        .right { flex: 1; }
+        .panel h2 { font-size: 14px; padding: 14px 16px; border-bottom: 1px solid #eee; color: #374151; }
+        .doc-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow-y: auto; }
+        .doc-item {
+            border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 13px;
+            display: flex; justify-content: space-between; align-items: center; gap: 8px;
+        }
+        .doc-name { word-break: break-all; }
+        .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+        .badge.PENDING { background: #fef3c7; color: #92400e; }
+        .badge.PARSING { background: #dbeafe; color: #1e40af; }
+        .badge.SUCCESS { background: #d1fae5; color: #065f46; }
+        .badge.FAILED { background: #fee2e2; color: #991b1b; }
+        .del-btn { border: none; background: none; color: #9ca3af; cursor: pointer; font-size: 14px; }
+        .del-btn:hover { color: #ef4444; }
+        .retry-btn { border: none; background: none; color: #2563eb; cursor: pointer; font-size: 14px; }
+        .retry-btn:hover { color: #1d4ed8; }
+        .progress { font-size: 11px; color: #6b7280; }
+        .chat-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+        .msg { max-width: 78%; padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+        .msg.user { align-self: flex-end; background: #2563eb; color: #fff; }
+        .msg.bot { align-self: flex-start; background: #f3f4f6; }
+        .msg.error { align-self: flex-start; background: #fee2e2; color: #991b1b; }
+        .cache-badge { align-self: flex-start; font-size: 11px; color: #059669; background: #d1fae5; padding: 2px 8px; border-radius: 10px; }
+        .refs { align-self: flex-start; font-size: 12px; color: #6b7280; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 12px; max-width: 78%; }
+        .refs .ref { margin-top: 2px; }
+        .chat-input { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #eee; }
+        .chat-input input {
+            flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none;
+        }
+        .chat-input input:focus { border-color: #2563eb; }
+        button { border: none; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: #fff; cursor: pointer; font-size: 14px; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .upload-row { display: flex; gap: 8px; align-items: center; }
+        .upload-row input[type=file] { font-size: 12px; flex: 1; }
+        .upload-meta { display: flex; gap: 8px; }
+        .upload-meta input, .upload-meta select { min-width: 0; flex: 1; padding: 7px; border: 1px solid #d1d5db; border-radius: 6px; }
+        .tip { font-size: 12px; color: #9ca3af; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>🛡️ ReleaseGuard 发布评审 Agent</h1>
+    <div class="stats" id="statsBar">加载统计中...</div>
+</header>
+<div class="container">
+    <!-- 左:文档管理 -->
+    <div class="panel left">
+        <h2>📄 发布规范与事故知识</h2>
+        <div class="doc-body">
+            <div class="upload-meta">
+                <select id="documentType">
+                    <option value="GENERAL">通用文档</option>
+                    <option value="RELEASE_POLICY">发布规范</option>
+                    <option value="INCIDENT">历史事故</option>
+                    <option value="RUNBOOK">运维手册</option>
+                </select>
+                <input id="serviceName" placeholder="服务名(可选)">
+            </div>
+            <div class="upload-row">
+                <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.md,.txt">
+                <button id="uploadBtn">上传</button>
+            </div>
+            <div class="tip">上传发布规范或历史复盘，Agent 会按类型和服务名检索</div>
+            <div id="docList"></div>
+        </div>
+    </div>
+    <!-- 右:智能问答 -->
+    <div class="panel right">
+        <h2>🤖 多轮发布评审</h2>
+        <div class="chat-body" id="chatBody">
+            <div class="msg bot">你好！我可以查询测试报告、数据库变更、服务依赖和发布规范，并逐步评估发布风险。试试：帮我评审 order-service v2.3.7 能不能发布。</div>
+        </div>
+        <div class="chat-input">
+            <input type="text" id="questionInput" placeholder="继续追问，例如：如果字段改成兼容新增，风险会怎样？" />
+            <button id="sendBtn">发送</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const $ = id => document.getElementById(id);
+
+    // ---------- 文档管理 ----------
+    async function loadDocs() {
+        const res = await fetch('/api/documents');
+        const docs = await res.json();
+        $('docList').innerHTML = docs.map(d => {
+            const progress = (d.status === 'PARSING' || d.status === 'FAILED') && d.parsedChunks != null
+                ? `<span class="progress">已入库 ${d.parsedChunks} 块</span>` : '';
+            const retry = d.status === 'FAILED'
+                ? `<button class="retry-btn" onclick="retryDoc(${d.id})" title="重试(从断点续传)">↻</button>` : '';
+            return `
+            <div class="doc-item">
+                <span class="doc-name">${d.docName}${progress}</span>
+                <span class="badge ${d.status}">${statusText(d.status)}</span>
+                ${retry}
+                <button class="del-btn" onclick="delDoc(${d.id})" title="删除">✕</button>
+            </div>`;
+        }).join('') || '<div class="tip">暂无文档</div>';
+    }
+    function statusText(s) {
+        return {PENDING: '待解析', PARSING: '解析中', SUCCESS: '已入库', FAILED: '失败'}[s] || s;
+    }
+    async function delDoc(id) {
+        await fetch('/api/documents/' + id, {method: 'DELETE'});
+        loadDocs();
+    }
+    async function retryDoc(id) {
+        await fetch('/api/documents/' + id + '/retry', {method: 'POST'});
+        loadDocs();
+    }
+    $('uploadBtn').onclick = async () => {
+        const file = $('fileInput').files[0];
+        if (!file) return alert('请先选择文件');
+        const form = new FormData();
+        form.append('file', file);
+        form.append('documentType', $('documentType').value);
+        form.append('serviceName', $('serviceName').value.trim());
+        $('uploadBtn').disabled = true;
+        await fetch('/api/documents', {method: 'POST', body: form});
+        $('uploadBtn').disabled = false;
+        $('fileInput').value = '';
+        loadDocs();
+    };
+    // 轮询解析状态
+    loadDocs();
+    setInterval(loadDocs, 3000);
+
+    // ---------- 智能问答(SSE 流式) ----------
+    function addMsg(text, cls) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (cls || 'bot');
+        div.textContent = text;
+        $('chatBody').appendChild(div);
+        $('chatBody').scrollTop = $('chatBody').scrollHeight;
+        return div;
+    }
+    let sessionId = localStorage.getItem('releaseGuardSessionId');
+    let activeEventSource = null;
+    let assistantMessage = null;
+
+    async function initializeSession() {
+        if (sessionId) {
+            const response = await fetch('/api/agent/sessions/' + sessionId);
+            if (response.ok) {
+                const history = await fetch('/api/agent/sessions/' + sessionId + '/messages');
+                if (history.ok) {
+                    const messages = await history.json();
+                    messages.forEach(message => addMsg(message.content, message.role === 'USER' ? 'user' : 'bot'));
+                }
+                const activeRunId = localStorage.getItem('releaseGuardRunId');
+                if (activeRunId) subscribeRun(activeRunId);
+                return;
+            }
+        }
+        const response = await fetch('/api/agent/sessions', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({userId: 'demo-user'})
+        });
+        const session = await response.json();
+        sessionId = session.sessionId;
+        localStorage.setItem('releaseGuardSessionId', sessionId);
+    }
+
+    async function send() {
+        const question = $('questionInput').value.trim();
+        if (!question) return;
+        addMsg(question, 'user');
+        $('questionInput').value = '';
+        $('sendBtn').disabled = true;
+        try {
+            if (!sessionId) await initializeSession();
+            const response = await fetch('/api/agent/sessions/' + sessionId + '/messages', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: question})
+            });
+            const run = await response.json();
+            if (!response.ok) throw new Error(run.error || '提交评审失败');
+            localStorage.setItem('releaseGuardRunId', run.runId);
+            subscribeRun(run.runId);
+        } catch (error) {
+            addMsg(error.message, 'error');
+            $('sendBtn').disabled = false;
+        }
+    }
+
+    function subscribeRun(runId) {
+        if (activeEventSource) activeEventSource.close();
+        assistantMessage = null;
+        activeEventSource = new EventSource('/api/agent/runs/' + runId + '/events');
+        activeEventSource.addEventListener('plan', event => {
+            const data = JSON.parse(event.data);
+            addMsg('🧭 ' + data.message);
+        });
+        activeEventSource.addEventListener('toolCall', event => {
+            const data = JSON.parse(event.data);
+            addMsg('🔧 调用 ' + data.tool + ' (' + data.riskLevel + ')\n' + JSON.stringify(data.arguments));
+        });
+        activeEventSource.addEventListener('toolResult', event => {
+            const data = JSON.parse(event.data);
+            addMsg('✅ ' + data.tool + ' 返回\n' + JSON.stringify(data.result).slice(0, 900));
+        });
+        activeEventSource.addEventListener('confirmation', event => showConfirmation(JSON.parse(event.data)));
+        activeEventSource.addEventListener('confirmationResolved', event => {
+            const data = JSON.parse(event.data);
+            addMsg(data.approved ? '✅ 已确认审批操作，继续完成评审。' : '已拒绝审批操作，Agent 将继续给出结论。');
+        });
+        activeEventSource.addEventListener('token', event => {
+            const data = JSON.parse(event.data);
+            if (!assistantMessage) assistantMessage = addMsg('');
+            assistantMessage.textContent += data.text;
+            $('chatBody').scrollTop = $('chatBody').scrollHeight;
+        });
+        activeEventSource.addEventListener('runCompleted', () => finishRun());
+        activeEventSource.addEventListener('runFailed', event => {
+            addMsg(JSON.parse(event.data).message, 'error');
+            finishRun();
+        });
+        activeEventSource.onerror = () => {
+            if (activeEventSource && activeEventSource.readyState === EventSource.CLOSED) {
+                addMsg('评审事件流已关闭，请检查执行状态后重试。', 'error');
+                finishRun();
+            }
+        };
+    }
+
+    function showConfirmation(data) {
+        const card = document.createElement('div');
+        card.className = 'msg bot';
+        const details = document.createElement('div');
+        details.textContent = '⚠️ Agent 请求执行高风险操作：' + data.tool + '\n' + JSON.stringify(data.arguments);
+        const approve = document.createElement('button');
+        approve.textContent = '确认';
+        const reject = document.createElement('button');
+        reject.textContent = '拒绝';
+        reject.style.marginLeft = '8px';
+        const decide = async approved => {
+            approve.disabled = true;
+            reject.disabled = true;
+            const response = await fetch('/api/agent/confirmations/' + data.confirmationId + '/decision', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token: data.token, approved})
+            });
+            if (!response.ok) {
+                const result = await response.json();
+                addMsg(result.error || '确认请求失败', 'error');
+                approve.disabled = false;
+                reject.disabled = false;
+            }
+        };
+        approve.onclick = () => decide(true);
+        reject.onclick = () => decide(false);
+        card.append(details, document.createElement('br'), approve, reject);
+        $('chatBody').appendChild(card);
+    }
+
+    function finishRun() {
+        if (activeEventSource) activeEventSource.close();
+        activeEventSource = null;
+        $('sendBtn').disabled = false;
+        $('questionInput').focus();
+        localStorage.removeItem('releaseGuardRunId');
+        loadStats();
+    }
+
+    $('sendBtn').onclick = send;
+    $('questionInput').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    initializeSession().catch(error => addMsg(error.message, 'error'));
+
+    // ---------- 统计 ----------
+    async function loadStats() {
+        const res = await fetch('/api/stats');
+        const s = await res.json();
+        $('statsBar').textContent =
+            `今日问答 ${s.totalQueries} 次 | token 消耗 ${s.totalTokens} | 缓存命中率 ${(s.cacheHitRate * 100).toFixed(1)}% | 文档 ${s.documentCount} 份`;
+    }
+    loadStats();
+</script>
+</body>
+</html>

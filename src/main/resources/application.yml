@@ -1,0 +1,104 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: release-guard-agent
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:3306/rag_kb?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        default-requeue-rejected: false
+        prefetch: 1
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 60MB
+
+rag:
+  llm:
+    chat:
+      # 策略模式切换模型:deepseek | qwen,新增厂商只需加一个实现类
+      provider: ${CHAT_PROVIDER:deepseek}
+      api-key: ${CHAT_API_KEY:sk-your-deepseek-api-key}
+      model: ${CHAT_MODEL:deepseek-chat}
+      temperature: 0.3
+      max-tokens: 1024
+    embedding:
+      # SiliconFlow 托管 BGE-M3(免费额度),OpenAI 兼容接口
+      base-url: ${EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
+      api-key: ${EMBEDDING_API_KEY:sk-your-siliconflow-api-key}
+      model: ${EMBEDDING_MODEL:BAAI/bge-m3}
+      dimension: 1024
+      # 批量向量化:一次 HTTP 携带的文本条数(千万字文档 2.5 万块 → 约 780 次请求)
+      batch-size: 32
+      # 批量请求最大并行度(有界并行,防打爆上游 RPM)
+      parallelism: 4
+      # 批量请求失败重试次数(指数退避 0.5s/1s/2s)
+      max-retries: 3
+    system-prompt: "你是企业知识库的智能问答助手。请只根据下面提供的资料回答问题,严禁编造资料中没有的信息;如果资料中没有答案,请直接回答:知识库中没有找到相关内容。回答要简洁、准确。"
+  retrieval:
+    # 混合检索召回后,最终返回给大模型的片段数
+    top-k: 4
+    # 余弦相似度阈值:低于该值的检索结果直接丢弃(防止答非所问/幻觉)
+    similarity-threshold: 0.5
+  chunking:
+    max-chars: 400
+    overlap-chars: 40
+  cache:
+    # Redis 语义缓存:相似问题直接返回缓存答案,省 token
+    enabled: true
+    similarity-threshold: 0.92
+    max-size: 200
+  rate-limit:
+    # 令牌桶 QPS(免费 API 有频率限制,先限自己)
+    qps: 5
+    # 每日 token 预算,超限拒绝请求
+    daily-token-budget: 500000
+    # 预算 key 的 TTL(小时),自动回收隔天旧 key,防 Redis 内存泄漏
+    token-key-ttl-hours: 48
+  mq:
+    queue: rag.document.parse
+    agent-run-queue: release.agent.run
+    agent-run-dlq: release.agent.run.dlq
+  agent:
+    max-steps: 8
+    max-tool-calls: 6
+    run-timeout-seconds: 30
+    recent-message-limit: 12
+    summary-trigger-count: 16
+    outbox-poll-ms: 1000
+  storage:
+    dir: ./data/docs
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    com.interview.rag: info
