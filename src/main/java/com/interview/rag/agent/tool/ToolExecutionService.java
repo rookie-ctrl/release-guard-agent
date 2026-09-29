@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.rag.agent.domain.ExecutionStatus;
 import com.interview.rag.agent.domain.ToolInvocation;
+import com.interview.rag.agent.github.GitHubApiException;
 import com.interview.rag.agent.repository.ToolInvocationRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -90,7 +91,7 @@ public class ToolExecutionService {
         long startedAt = System.nanoTime();
         Timer.Sample timer = Timer.start(meterRegistry);
         try {
-            Object result = invokeWithRetries(tool, arguments, definition);
+            Object result = invokeWithRetries(runId, tool, arguments, definition);
             invocation.setResultJson(objectMapper.writeValueAsString(result));
             invocation.setStatus(ExecutionStatus.SUCCESS);
             invocation.setDurationMs(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
@@ -110,7 +111,8 @@ public class ToolExecutionService {
             meterRegistry.counter("releaseguard.agent.tool.calls", "tool", toolName, "outcome", "failure")
                     .increment();
             throw e instanceof ToolExecutionException toolException
-                    ? toolException : new ToolExecutionException("工具执行失败: " + toolName, e);
+                    ? toolException : new ToolExecutionException(e instanceof GitHubApiException
+                    ? e.getMessage() : "工具执行失败: " + toolName, e);
         }
     }
 
@@ -140,24 +142,29 @@ public class ToolExecutionService {
         }
     }
 
-    private Object invokeWithTimeout(AgentTool tool, JsonNode arguments, Duration timeout) throws Exception {
-        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> tool.execute(arguments), toolExecutor);
+    private Object invokeWithTimeout(String runId, AgentTool tool, JsonNode arguments, Duration timeout) throws Exception {
+        CompletableFuture<Object> future = CompletableFuture.supplyAsync(() -> tool.execute(runId, arguments), toolExecutor);
         try {
             return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw e.getCause() instanceof Exception cause ? cause : e;
         } catch (Exception e) {
             future.cancel(true);
             throw e;
         }
     }
 
-    private Object invokeWithRetries(AgentTool tool, JsonNode arguments, ToolDefinition definition) throws Exception {
+    private Object invokeWithRetries(String runId, AgentTool tool, JsonNode arguments, ToolDefinition definition) throws Exception {
         Exception lastError = null;
         int retries = definition.riskLevel() == ToolRiskLevel.READ_ONLY ? definition.maxRetries() : 0;
         for (int attempt = 0; attempt <= retries; attempt++) {
             try {
-                return invokeWithTimeout(tool, arguments, definition.timeout());
+                return invokeWithTimeout(runId, tool, arguments, definition.timeout());
             } catch (Exception e) {
                 lastError = e;
+                if (e instanceof GitHubApiException githubError && githubError.statusCode() != 0) {
+                    throw githubError;
+                }
                 if (attempt < retries) {
                     Thread.sleep(100L << attempt);
                 }

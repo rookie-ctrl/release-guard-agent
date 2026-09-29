@@ -7,4 +7,8 @@ public interface AgentTool {
     ToolDefinition definition();
 
     Object execute(JsonNode arguments);
+
+    default Object execute(String runId, JsonNode arguments) {
+        return execute(arguments);
+    }
 }

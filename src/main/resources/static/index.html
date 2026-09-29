@@ -91,9 +91,17 @@
     </div>
     <!-- 右:智能问答 -->
     <div class="panel right">
-        <h2>🤖 多轮发布评审</h2>
+        <h2>🤖 GitHub PR 与多轮评审</h2>
+        <div style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
+            <label for="pullRequestInput">公开 GitHub PR 链接</label>
+            <input type="url" id="pullRequestInput" placeholder="https://github.com/owner/repo/pull/123"
+                   style="width: 100%; box-sizing: border-box; margin: 8px 0; padding: 8px;" />
+            <button id="startReviewBtn">开始 PR 评审</button>
+            <button id="demoSessionBtn">演示发布</button>
+            <div class="tip" id="currentReview">填写公开 PR 链接开始评审，或选择演示发布。</div>
+        </div>
         <div class="chat-body" id="chatBody">
-            <div class="msg bot">你好！我可以查询测试报告、数据库变更、服务依赖和发布规范，并逐步评估发布风险。试试：帮我评审 order-service v2.3.7 能不能发布。</div>
+            <div class="msg bot">上传规范后，在上方填入公开 GitHub PR 链接。我会读取代码变更、必要上下文和 CI，并结合知识库评审。演示发布使用预设数据。</div>
         </div>
         <div class="chat-input">
             <input type="text" id="questionInput" placeholder="继续追问，例如：如果字段改成兼容新增，风险会怎样？" />
@@ -164,37 +172,77 @@
     let activeEventSource = null;
     let assistantMessage = null;
 
+    function setBusy(busy) {
+        $('sendBtn').disabled = busy;
+        $('startReviewBtn').disabled = busy;
+        $('demoSessionBtn').disabled = busy;
+        $('pullRequestInput').disabled = busy;
+    }
+
+    function showSession(session) {
+        if (session.mode === 'GITHUB_PR') {
+            const context = JSON.parse(session.pullRequestContextJson);
+            $('pullRequestInput').value = context.url;
+            $('currentReview').textContent = '当前 PR：' + context.url + ' ｜提交 ' + context.headSha.slice(0, 12);
+        } else {
+            $('pullRequestInput').value = '';
+            $('currentReview').textContent = '当前为演示发布模式：order-service v2.3.7，工具返回预设数据。';
+        }
+    }
+
+    async function createReviewSession(pullRequestUrl) {
+        const response = await fetch('/api/agent/sessions', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({userId: 'demo-user', pullRequestUrl: pullRequestUrl || null})
+        });
+        const session = await response.json();
+        if (!response.ok) throw new Error(session.error || '创建评审会话失败');
+        if (activeEventSource) activeEventSource.close();
+        activeEventSource = null;
+        sessionId = session.sessionId;
+        localStorage.setItem('releaseGuardSessionId', sessionId);
+        localStorage.removeItem('releaseGuardRunId');
+        $('chatBody').replaceChildren();
+        showSession(session);
+        addMsg(pullRequestUrl ? '已绑定 PR 提交。可以持续追问；PR 有新提交时请重新开始评审。'
+                : '已创建演示发布会话，查询结果为预设数据。');
+    }
+
     async function initializeSession() {
         if (sessionId) {
             const response = await fetch('/api/agent/sessions/' + sessionId);
             if (response.ok) {
+                showSession(await response.json());
                 const history = await fetch('/api/agent/sessions/' + sessionId + '/messages');
                 if (history.ok) {
                     const messages = await history.json();
-                    messages.forEach(message => addMsg(message.content, message.role === 'USER' ? 'user' : 'bot'));
+                    messages.filter(message => message.role !== 'TOOL')
+                        .forEach(message => addMsg(message.content, message.role === 'USER' ? 'user' : 'bot'));
                 }
                 const activeRunId = localStorage.getItem('releaseGuardRunId');
-                if (activeRunId) subscribeRun(activeRunId);
+                if (activeRunId) {
+                    setBusy(true);
+                    subscribeRun(activeRunId);
+                }
                 return;
             }
         }
-        const response = await fetch('/api/agent/sessions', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({userId: 'demo-user'})
-        });
-        const session = await response.json();
-        sessionId = session.sessionId;
-        localStorage.setItem('releaseGuardSessionId', sessionId);
+        sessionId = null;
+        localStorage.removeItem('releaseGuardSessionId');
+        localStorage.removeItem('releaseGuardRunId');
     }
 
     async function send() {
         const question = $('questionInput').value.trim();
         if (!question) return;
+        if (!sessionId) {
+            addMsg('请先填写 PR 链接并开始评审，或选择演示发布。', 'error');
+            return;
+        }
         addMsg(question, 'user');
         $('questionInput').value = '';
-        $('sendBtn').disabled = true;
+        setBusy(true);
         try {
-            if (!sessionId) await initializeSession();
             const response = await fetch('/api/agent/sessions/' + sessionId + '/messages', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({message: question})
@@ -205,7 +253,7 @@
             subscribeRun(run.runId);
         } catch (error) {
             addMsg(error.message, 'error');
-            $('sendBtn').disabled = false;
+            setBusy(false);
         }
     }
 
@@ -282,15 +330,36 @@
     function finishRun() {
         if (activeEventSource) activeEventSource.close();
         activeEventSource = null;
-        $('sendBtn').disabled = false;
+        setBusy(false);
         $('questionInput').focus();
         localStorage.removeItem('releaseGuardRunId');
         loadStats();
     }
 
     $('sendBtn').onclick = send;
+    async function startReview(demo) {
+        const url = $('pullRequestInput').value.trim();
+        if (!demo && !url) {
+            addMsg('请填写公开 GitHub PR 链接。', 'error');
+            return;
+        }
+        setBusy(true);
+        try {
+            await createReviewSession(demo ? null : url);
+            $('questionInput').value = demo ? '帮我评审 order-service v2.3.7 能不能发布'
+                    : '请评审这个 PR，读取变更与 CI，并结合知识库规范给出风险、代码依据、改进建议和未确认事项。';
+            await send();
+        } catch (error) {
+            addMsg(error.message, 'error');
+            setBusy(false);
+        }
+    }
+    $('startReviewBtn').onclick = () => startReview(false);
+    $('demoSessionBtn').onclick = () => startReview(true);
     $('questionInput').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
-    initializeSession().catch(error => addMsg(error.message, 'error'));
+    setBusy(true);
+    initializeSession().catch(error => addMsg(error.message, 'error'))
+        .finally(() => { if (!activeEventSource) setBusy(false); });
 
     // ---------- 统计 ----------
     async function loadStats() {

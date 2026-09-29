@@ -77,8 +77,11 @@ public class AgentRunner {
             run.setStatus(AgentStatus.RUNNING);
             runRepository.save(run);
             List<ChatMessage> messages = memoryService.buildMessages(run.getSessionId());
+            boolean pullRequestMode = sessionRepository.findById(run.getSessionId()).orElseThrow()
+                    .getPullRequestContextJson() != null;
             int toolCalls = run.getToolCallCount() == null ? 0 : run.getToolCallCount();
-            eventService.publish(runId, "plan", Map.of("message", "正在检查发布信息、测试、数据库变更和服务依赖"));
+            eventService.publish(runId, "plan", Map.of("message", pullRequestMode
+                    ? "正在读取 GitHub PR、代码变更、CI 和知识库规范" : "正在检查演示发布信息、测试、数据库变更和服务依赖"));
 
             for (int step = 0; step < properties.maxSteps(); step++) {
                 if (System.currentTimeMillis() - startedAt > properties.runTimeoutSeconds() * 1000L) {
@@ -86,7 +89,7 @@ public class AgentRunner {
                 }
                 ChatResponse response = chatModelManager.nonStreamingChatModel().chat(ChatRequest.builder()
                         .messages(messages)
-                        .toolSpecifications(toolRegistry.specifications())
+                        .toolSpecifications(toolRegistry.specifications(pullRequestMode))
                         .build());
                 AiMessage aiMessage = response.aiMessage();
                 messages.add(aiMessage);
@@ -96,6 +99,9 @@ public class AgentRunner {
                 }
 
                 for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
+                    if (!toolRegistry.allowedInMode(request.name(), pullRequestMode)) {
+                        throw new ToolExecutionException("当前评审模式不允许调用工具：" + request.name());
+                    }
                     if (++toolCalls > properties.maxToolCalls()) {
                         throw new IllegalStateException("Agent 工具调用次数超过限制");
                     }
@@ -113,13 +119,21 @@ public class AgentRunner {
                     ToolResult result = toolExecutionService.execute(runId, request.name(), request.arguments());
                     String resultJson = objectMapper.writeValueAsString(result.value());
                     if (resultJson.length() > MAX_TOOL_RESULT_CHARS) {
-                        resultJson = resultJson.substring(0, MAX_TOOL_RESULT_CHARS);
+                        resultJson = objectMapper.writeValueAsString(Map.of("truncated", true,
+                                "reason", "工具结果超过上下文限制，只显示片段，不能视为完整检查",
+                                "preview", resultJson.substring(0, 5000)));
                     }
                     persistStep(run, AgentStepType.TOOL_CALL, ExecutionStatus.SUCCESS,
                             request.arguments(), resultJson, result.durationMs());
                     eventService.publish(runId, "toolResult", Map.of("tool", request.name(),
                             "result", result.value(), "durationMs", result.durationMs(), "replayed", result.replayed()));
                     messages.add(ToolExecutionResultMessage.from(request, resultJson));
+                    AgentMessage observation = new AgentMessage();
+                    observation.setSessionId(run.getSessionId());
+                    observation.setRunId(runId);
+                    observation.setRole(MessageRole.TOOL);
+                    observation.setContent(request.name() + " " + request.arguments() + "\n" + resultJson);
+                    messageRepository.save(observation);
                 }
             }
             throw new IllegalStateException("Agent 推理轮数超过限制");

@@ -30,8 +30,8 @@ public class AgentController {
 
     @PostMapping("/sessions")
     public SessionResponse createSession(@Valid @RequestBody CreateSessionRequest request) {
-        AgentSession session = sessionService.createSession(request.userId());
-        return new SessionResponse(session.getId(), session.getStatus());
+        AgentSession session = sessionService.createSession(request.userId(), request.pullRequestUrl());
+        return sessionResponse(session);
     }
 
     @PostMapping("/sessions/{sessionId}/messages")
@@ -44,7 +44,7 @@ public class AgentController {
     @GetMapping("/sessions/{sessionId}")
     public SessionResponse getSession(@PathVariable String sessionId) {
         AgentSession session = sessionService.getSession(sessionId);
-        return new SessionResponse(session.getId(), session.getStatus());
+        return sessionResponse(session);
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
@@ -84,7 +84,13 @@ public class AgentController {
         }
     }
 
-    public record CreateSessionRequest(String userId) {
+    private SessionResponse sessionResponse(AgentSession session) {
+        return new SessionResponse(session.getId(), session.getStatus(),
+                session.getPullRequestContextJson() == null ? "DEMO" : "GITHUB_PR",
+                session.getPullRequestContextJson());
+    }
+
+    public record CreateSessionRequest(String userId, String pullRequestUrl) {
     }
 
     public record SendMessageRequest(@NotBlank String message) {
@@ -93,7 +99,7 @@ public class AgentController {
     public record ConfirmationDecision(@NotBlank String token, boolean approved) {
     }
 
-    public record SessionResponse(String sessionId, AgentStatus status) {
+    public record SessionResponse(String sessionId, AgentStatus status, String mode, String pullRequestContextJson) {
     }
 
     public record MessageResponse(com.interview.rag.agent.domain.MessageRole role, String content) {

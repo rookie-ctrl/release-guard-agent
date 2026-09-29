@@ -2,6 +2,7 @@ package com.interview.rag.agent.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.rag.agent.domain.ToolInvocation;
+import com.interview.rag.agent.github.GitHubApiException;
 import com.interview.rag.agent.repository.ToolInvocationRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -102,5 +103,20 @@ class ToolExecutionServiceTest {
         AgentTool tool = new GatewayAgentTool(definition, executor);
         return new ToolExecutionService(new ToolRegistry(List.of(tool)), invocationRepository, objectMapper,
                 new SimpleMeterRegistry(), Runnable::run);
+    }
+
+    @Test
+    void preservesSafeGitHubFailureWithoutRetryingRateLimit() {
+        AtomicInteger calls = new AtomicInteger();
+        ToolExecutionService service = service(ToolRiskLevel.READ_ONLY, ignored -> {
+            calls.incrementAndGet();
+            throw new GitHubApiException(403, "GitHub API 已限流，请等待额度恢复");
+        });
+
+        assertThatThrownBy(() -> service.execute("run-1", "inspect", "{\"service\":\"orders\"}"))
+                .isInstanceOf(ToolExecutionException.class).hasMessageContaining("GitHub API 已限流");
+        assertThat(calls).hasValue(1);
+        assertThat(invocations.values()).singleElement()
+                .satisfies(invocation -> assertThat(invocation.getErrorMessage()).contains("GitHub API 已限流"));
     }
 }

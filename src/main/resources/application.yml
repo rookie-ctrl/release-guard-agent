@@ -42,7 +42,7 @@ rag:
       api-key: ${CHAT_API_KEY:sk-your-deepseek-api-key}
       model: ${CHAT_MODEL:deepseek-chat}
       temperature: 0.3
-      max-tokens: 1024
+      max-tokens: ${CHAT_MAX_TOKENS:2048}
     embedding:
       # SiliconFlow 托管 BGE-M3(免费额度),OpenAI 兼容接口
       base-url: ${EMBEDDING_BASE_URL:https://api.siliconflow.cn/v1}
@@ -80,10 +80,15 @@ rag:
     queue: rag.document.parse
     agent-run-queue: release.agent.run
     agent-run-dlq: release.agent.run.dlq
+  github:
+    token: ${GITHUB_TOKEN:}
+    api-version: 2026-03-10
+    timeout-seconds: 5
+    max-response-bytes: 2097152
   agent:
-    max-steps: 8
-    max-tool-calls: 6
-    run-timeout-seconds: 30
+    max-steps: 12
+    max-tool-calls: 20
+    run-timeout-seconds: 180
     recent-message-limit: 12
     summary-trigger-count: 16
     outbox-poll-ms: 1000

@@ -32,6 +32,9 @@ public class AgentSession {
 
     private Long summaryThroughMessageId;
 
+    @Column(columnDefinition = "TEXT")
+    private String pullRequestContextJson;
+
     @Version
     private Long version;
 

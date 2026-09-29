@@ -30,6 +30,16 @@ public class ToolRegistry {
         return tools.values().stream().map(tool -> tool.definition().specification()).toList();
     }
 
+    public boolean allowedInMode(String name, boolean pullRequestMode) {
+        return pullRequestMode ? name.startsWith("github") || name.equals("searchKnowledge")
+                : !name.startsWith("github");
+    }
+
+    public List<ToolSpecification> specifications(boolean pullRequestMode) {
+        return tools.values().stream().filter(tool -> allowedInMode(tool.definition().name(), pullRequestMode))
+                .map(tool -> tool.definition().specification()).toList();
+    }
+
     public List<ToolDefinition> definitions() {
         return tools.values().stream().map(AgentTool::definition).toList();
     }

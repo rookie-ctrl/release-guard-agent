@@ -1,6 +1,8 @@
 package com.interview.rag.agent.service;
 
 import com.interview.rag.agent.domain.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.interview.rag.agent.github.GitHubGateway;
 import com.interview.rag.agent.repository.AgentMessageRepository;
 import com.interview.rag.agent.repository.AgentRunRepository;
 import com.interview.rag.agent.repository.AgentSessionRepository;
@@ -21,22 +23,30 @@ public class AgentSessionService {
     private final AgentMessageRepository messageRepository;
     private final ReleaseReviewRepository reviewRepository;
     private final AgentOutboxService outboxService;
+    private final GitHubGateway gitHubGateway;
+    private final ObjectMapper objectMapper;
     public AgentSessionService(AgentSessionRepository sessionRepository, AgentRunRepository runRepository,
                                AgentMessageRepository messageRepository, ReleaseReviewRepository reviewRepository,
-                               AgentOutboxService outboxService) {
+                               AgentOutboxService outboxService, GitHubGateway gitHubGateway,
+                               ObjectMapper objectMapper) {
         this.sessionRepository = sessionRepository;
         this.runRepository = runRepository;
         this.messageRepository = messageRepository;
         this.reviewRepository = reviewRepository;
         this.outboxService = outboxService;
+        this.gitHubGateway = gitHubGateway;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
-    public AgentSession createSession(String userId) {
+    public AgentSession createSession(String userId, String pullRequestUrl) {
         AgentSession session = new AgentSession();
         session.setId(UUID.randomUUID().toString());
         session.setStatus(AgentStatus.CREATED);
         session.setUserId(userId);
+        if (pullRequestUrl != null && !pullRequestUrl.isBlank()) {
+            session.setPullRequestContextJson(objectMapper.valueToTree(gitHubGateway.snapshot(pullRequestUrl)).toString());
+        }
         session = sessionRepository.save(session);
 
         ReleaseReview review = new ReleaseReview();
