@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>简历 - Java 后端开发实习生</title>
+<style>
+  :root {
+    --accent: #1a5276;
+    --text: #2c3e50;
+    --gray: #6b7a8a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    color: var(--text);
+    font-size: 10pt;
+    line-height: 1.45;
+    background: #eef0f3;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto;
+    background: #fff;
+    padding: 10mm 13mm 8mm;
+    box-shadow: 0 2px 12px rgba(0,0,0,.08);
+  }
+  .tip {
+    max-width: 210mm;
+    margin: 12px auto 0;
+    padding: 8px 14px;
+    background: #fff8e1;
+    border: 1px solid #f0d98c;
+    border-radius: 6px;
+    color: #7a6a2f;
+    font-size: 9.5pt;
+    text-align: center;
+  }
+  @page { size: A4; margin: 0; }
+  @media print {
+    body { background: #fff; }
+    .page { box-shadow: none; margin: 0; }
+    .tip { display: none; }
+  }
+
+  /* 头部 */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2.5px solid var(--accent);
+    padding-bottom: 6px;
+  }
+  h1 { font-size: 21pt; letter-spacing: 3px; }
+  .aim { font-size: 10pt; margin-top: 3px; color: var(--gray); }
+  .aim b { color: var(--accent); }
+  .contact { text-align: right; font-size: 9.5pt; color: var(--gray); line-height: 1.9; }
+
+  /* 章节 */
+  h2 {
+    font-size: 10.5pt;
+    color: var(--accent);
+    border-bottom: 1px solid var(--accent);
+    padding-bottom: 2px;
+    margin: 6px 0 3px;
+    letter-spacing: 1px;
+  }
+  h2::before {
+    content: "";
+    display: inline-block;
+    width: 4px; height: 11px;
+    background: var(--accent);
+    margin-right: 7px;
+    vertical-align: -1px;
+  }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .row .l { font-weight: 700; }
+  .row .r { color: var(--gray); font-size: 9.5pt; white-space: nowrap; margin-left: 12px; }
+  .tag {
+    display: inline-block;
+    font-size: 8pt;
+    font-weight: 600;
+    color: var(--accent);
+    background: #e8f0f7;
+    border-radius: 3px;
+    padding: 0 5px;
+    margin: 0 2px;
+    vertical-align: 1px;
+  }
+
+  ul { padding-left: 14px; margin-top: 1px; }
+  li { font-size: 9.2pt; margin-bottom: 1.5px; }
+  li::marker { color: var(--accent); }
+
+  /* 项目 */
+  .proj { margin-bottom: 4px; }
+  .proj .title { font-weight: 700; font-size: 10.5pt; }
+  .stack { color: var(--gray); font-size: 8.5pt; margin: 1px 0 1.5px; }
+  .desc { font-size: 9.2pt; color: #47566a; margin-bottom: 1.5px; }
+
+  /* 专业技能 */
+  .skill p { font-size: 9.2pt; margin-bottom: 1.5px; }
+  .skill b { color: var(--accent); margin-right: 4px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============ 头部 ============ -->
+  <header>
+    <div>
+      <h1>王晗</h1>
+      <p class="aim">求职意向:<b>Java 后端开发实习生</b></p>
+    </div>
+    <div class="contact">
+      <p>电话:17539267089</p>
+      <p>邮箱:1438194951@qq.com</p>
+    </div>
+  </header>
+
+  <!-- ============ 教育背景 ============ -->
+  <section>
+    <h2>教育背景</h2>
+    <div class="row">
+      <div class="l">吉林大学<span class="tag">985</span><span class="tag">211</span><span class="tag">双一流</span> · 物联网工程 · 本科</div>
+      <div class="r">2024.09 – 2028.06</div>
+    </div>
+    <ul>
+      <li>蓝桥杯全国软件和信息技术专业人才大赛 <b>C++ 组省赛二等奖(A 组)</b></li>
+      <li>大学英语四级(CET-4)、六级(CET-6)</li>
+    </ul>
+  </section>
+
+  <!-- ============ 项目经历 ============ -->
+  <section>
+    <h2>项目经历</h2>
+
+    <div class="proj">
+      <div class="title">CityHub 本地生活服务平台(类大众点评)<span class="tag">个人项目</span></div>
+      <p class="stack">技术栈:Spring Boot · MyBatis-Plus · MySQL · Redis · RabbitMQ · Redisson</p>
+      <p class="desc">还原大众点评核心业务(商户查询、优惠券秒杀、签到、点赞、关注 Feed 流),针对高并发场景的超卖、响应慢等瓶颈逐层引入缓存、消息队列、分布式锁等中间件,并通过 <b>JMeter 压测验证优化效果</b>,将系统从「能用」优化到「抗压」。</p>
+      <ul>
+        <li>设计<b>Redis+Lua原子脚本</b>实现高并发库存扣减与<b>一人一单校验</b>,单次请求完成「查库存 → 防重复 → 扣库存 → 记录用户」,并以<b>数据库条件更新</b>做二次兜底;<b>500 并发抢 200 库存的 JMeter 压测中 0 超卖、0 一人多单,接口平均响应 17ms</b>。</li>
+        <li>引入<b>RabbitMQ</b>将秒杀链路中的下单流程<b>异步解耦</b>,校验通过立即返回「排队中」,消费者异步落库,配合<b>订单主键幂等 + 死信队列重试</b>实现流量削峰;<b>压测 200 单全部落库、与 Redis 扣减一一对应</b>。</li>
+        <li>使用<b>逻辑过期 + 互斥锁异步重建</b>方案防止热点 Key 的<b>缓存击穿</b>;<b>1000 线程并发打已过期热点,数据库查询仅 1 次</b>(其余请求返回旧数据),压测平均响应 11ms。</li>
+        <li>使用<b>缓存空值</b>方案解决<b>缓存穿透</b>;<b>1000 并发请求不存在 ID,数据库 0 次查询</b>。</li>
+        <li>更新数据库后删除缓存,删除失败采取<b>消息队列补偿重试</b>,结合<b>TTL兜底</b>共同确保数据最终一致性。</li>
+        <li>基于<b>Redis + AOP + 注解</b>实现<b>滑动窗口限流</b>,支持全局/IP/用户多维度,防止系统过载、恶意刷券、爬虫抓取。</li>
+        <li>基于<b>Spring Task定时任务</b>分钟级扫描<b>自动关闭超时未支付订单</b>、释放库存;以<b>状态条件更新(CAS思想)</b>解决<b>支付回调与超时关单</b>的并发竞争,确保订单状态流转一致。</li>
+        <li>使用<b>Redis分布式锁</b>(SETNX → <b>Lua校验线程标识原子释放</b> → <b>Redisson可重入锁</b>)解决集群部署下的互斥、锁误删与不可重入问题。</li>
+      </ul>
+    </div>
+
+    <div class="proj">
+      <div class="title">ReleaseGuard 发布变更评审 Agent<span class="tag">个人项目</span></div>
+      <p class="stack">技术栈:Spring Boot 3.5 · LangChain4j · DeepSeek · Spring Data JPA · MySQL · Redis · RabbitMQ · Elasticsearch 8.17</p>
+      <p class="desc">面向公开 GitHub PR 的变更风险评审系统:读取 PR 信息、代码 diff、源码上下文与 CI,结合企业规范知识库生成<b>带证据的评审结论</b>,支持多轮追问、异步执行与过程追踪。</p>
+      <ul>
+        <li>基于 <b>LangChain4j Tool Calling</b> 实现「模型决策 → 工具执行 → 结果反馈」闭环,设计<b>工具白名单、必填参数校验、风险分级与人工确认门禁</b>,限制推理轮数、工具调用次数和工具等待时长,将模型决策与后端执行控制分离。</li>
+        <li>接入 <b>GitHub PR / diff / 源码上下文 / CI</b> 只读工具,创建会话时绑定 <b>head / base / merge-base SHA</b>,读取前后校验 PR 是否更新;通过<b>分页、按需读码与截断标记</b>控制上下文体积,明确未检查范围,降低不同版本证据混用风险。</li>
+        <li>采用 <b>事务 Outbox + RabbitMQ</b> 异步调度评审任务,Run 与待投递事件同事务落库,投递失败退避重试;结合 <b>Redis 执行锁 + Lua 校验令牌释放</b>、任务状态检查和<b>工具幂等键复用成功结果</b>,降低重复执行风险。</li>
+        <li>设计「<b>近期消息窗口 + 结构化历史摘要 + 单条长消息压缩</b>」记忆机制,使用<b>摘要游标</b>管理增量历史,保留原文并持久化压缩结果;摘要失败降级返回有限片段,显式标记未读取内容,支持围绕同一 PR 持续追问。</li>
+        <li>将 <b>BM25 + kNN 双路召回、RRF 排名融合</b>封装为知识检索工具,支持文档类型与服务过滤,提供规范原文依据;持久化 <b>Session / Run / Step / 工具审计 / SSE 事件</b>,支持 <b>Last-Event-ID 断线补读</b>,记录工具耗时与执行结果指标。</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ 专业技能 ============ -->
+  <section class="skill">
+    <h2>专业技能</h2>
+    <p><b>MySQL</b>:熟悉索引结构(B+ 树、最左前缀、覆盖索引)、事务隔离级别、MVCC、行锁与间隙锁,掌握慢 SQL 定位与优化</p>
+    <p><b>Redis</b>:熟悉五种数据结构与常见应用(缓存、分布式锁、排行榜、签到、GEO),掌握缓存穿透/击穿/雪崩解决方案、持久化(RDB / AOF)、内存淘汰策略与 Lua 脚本</p>
+    <p><b>RabbitMQ</b>:熟悉核心模型(交换机 / 队列 / 路由)与消息可靠性,理解消息幂等、顺序性与死信队列</p>
+    <p><b>JUC</b>:熟悉 Java 并发编程——线程池、synchronized、volatile、CAS、AQS、ReentrantLock、ConcurrentHashMap</p>
+    <p><b>JVM</b>:了解内存区域划分、类加载机制、垃圾回收算法与 CMS / G1 收集器</p>
+    <p><b>Spring Boot</b>:熟悉自动装配原理、IoC / AOP、Bean 生命周期,熟悉 Spring MVC 与 MyBatis-Plus 整合开发</p>
+    <p><b>开发工具 / AI 工具</b>:熟悉 Git、Maven、Docker、Linux 常用命令;熟悉 Claude Code、Codex 等新兴 AI 工具</p>
+  </section>
+
+</div>
+
+<div class="tip">💡 浏览器打开本文件后按 Ctrl+P → 目标打印机选「另存为 PDF」→ 边距选「无」,即可导出 A4 一页 PDF 简历</div>
+</body>
+</html>
