@@ -46,6 +46,13 @@ public class AgentRun {
 
     private Long elapsedMs;
 
+    @Column(length = 36)
+    private String executionToken;
+
+    private LocalDateTime executionLeaseUntil;
+
+    private LocalDateTime executionDeadlineAt;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 

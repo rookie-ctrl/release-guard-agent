@@ -109,6 +109,7 @@ public class GitHubGateway {
             result.put("apiPatchIncomplete", additions != file.path("additions").asInt()
                     || deletions != file.path("deletions").asInt());
             addLines(result, patch, startLine, false, "patch");
+            addDiffCoordinates(result, patch);
             return result;
         }
         throw new IllegalArgumentException("本页找不到该变更文件，请使用文件列表返回的 diffPage");
@@ -294,6 +295,37 @@ public class GitHubGateway {
         result.put("nextStartLine", nextLine <= lines.length ? nextLine : 0);
         result.put("truncated", nextLine <= lines.length || lineClipped);
         result.put("lineClipped", lineClipped);
+    }
+
+    private void addDiffCoordinates(ObjectNode result, String patch) {
+        var coordinates = objectMapper.createArrayNode();
+        String[] lines = patch.split("\\n", -1);
+        var hunk = java.util.regex.Pattern.compile("^@@ -(\\d+)(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@.*");
+        int baseLine = 0;
+        int headLine = 0;
+        int start = result.path("startLine").asInt();
+        int end = result.path("nextStartLine").asInt() == 0
+                ? lines.length : result.path("nextStartLine").asInt() - 1;
+        for (int i = 0; i < lines.length && i + 1 <= end; i++) {
+            var match = hunk.matcher(lines[i]);
+            if (match.matches()) {
+                baseLine = Integer.parseInt(match.group(1));
+                headLine = Integer.parseInt(match.group(2));
+                continue;
+            }
+            if (baseLine == 0 && headLine == 0) continue;
+            char prefix = lines[i].isEmpty() ? '\0' : lines[i].charAt(0);
+            int old = (prefix == ' ' || prefix == '-') ? baseLine++ : 0;
+            int current = (prefix == ' ' || prefix == '+') ? headLine++ : 0;
+            if (i + 1 >= start && !result.path("lineClipped").asBoolean()
+                    && (old > 0 || current > 0)) {
+                var coordinate = coordinates.addObject();
+                coordinate.put("patchLine", i + 1);
+                if (old > 0) coordinate.put("baseLine", old);
+                if (current > 0) coordinate.put("headLine", current);
+            }
+        }
+        result.set("lineCoordinates", coordinates);
     }
 
     private static void validatePath(String filename) {

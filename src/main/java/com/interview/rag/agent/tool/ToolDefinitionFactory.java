@@ -20,10 +20,10 @@ public final class ToolDefinitionFactory {
                                                   List<String> requiredProperties, List<String> optionalProperties) {
         JsonObjectSchema.Builder schema = JsonObjectSchema.builder().additionalProperties(false);
         for (String property : requiredProperties) {
-            schema.addStringProperty(property);
+            addProperty(schema, property);
         }
         for (String property : optionalProperties) {
-            schema.addStringProperty(property);
+            addProperty(schema, property);
         }
         schema.required(requiredProperties);
         ToolSpecification specification = ToolSpecification.builder()
@@ -32,5 +32,15 @@ public final class ToolDefinitionFactory {
                 .parameters(schema.build())
                 .build();
         return new ToolDefinition(name, description, risk, Duration.ofSeconds(5), 1, specification);
+    }
+
+    private static void addProperty(JsonObjectSchema.Builder schema, String property) {
+        switch (property) {
+            case "side" -> schema.addEnumProperty(property, List.of("HEAD", "BASE"));
+            case "riskLevel" -> schema.addEnumProperty(property, List.of("LOW", "MEDIUM", "HIGH"));
+            case "documentType" -> schema.addEnumProperty(property,
+                    java.util.Arrays.stream(com.interview.rag.domain.DocumentType.values()).map(Enum::name).toList());
+            default -> schema.addStringProperty(property);
+        }
     }
 }

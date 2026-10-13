@@ -106,10 +106,13 @@ Last-Event-ID: 4
 - [PR 会话与 Agent 流程](docs/release-guard/11-PR会话与Agent流程.md)
 - [PR 页面与配置](docs/release-guard/12-PR页面与配置.md)
 - [PR 接入验证](docs/release-guard/13-PR接入验证.md)
+- [对话布局与文档预览](docs/release-guard/14-对话布局与文档预览.md)
 - RAG 底层原理记录见 `docs/` 中的 ES/kNN、RRF、Embedding 入库和 SSE 文档。
 
 ## 当前实现范围
 
-独立项目基线、Agent 持久化模型、Mock 发布数据、工具白名单与参数校验、LangChain4j Tool Calling 循环、多轮消息摘要、分类知识检索、事务 Outbox、RabbitMQ Run 调度、Redis 执行锁、SSE 事件重放和 Micrometer 指标已落代码。演示资料与操作步骤见 `docs/demo/README.md`。外部写工具的下游幂等透传和恢复压测仍需后续完善。
+独立项目基线、Agent 持久化模型、Mock 发布数据、工具白名单与参数校验、LangChain4j Tool Calling 循环、多轮消息摘要、分类知识检索、事务 Outbox、RabbitMQ Run 调度、Redis 执行锁、SSE 事件重放和 Micrometer 指标已落代码。演示资料与操作步骤见 `docs/demo/README.md`。
+
+执行锁保持 120 秒 TTL，由独立线程每 30 秒按令牌续期，受 180 秒执行预算限制。Run 状态及关联结果通过 executionToken 条件更新保护，失去执行权的旧工作者不会覆盖接管者。审批确认先持久化 operationId 和原始参数，再由后台调用外部接口，结果、工具观察和恢复 Outbox 在另一短事务提交。Mock 审批系统以数据库唯一键持久化幂等记录，支持查询对账及重启后复用同一审批单。真实外部系统仍须实现相同的幂等契约；不支持幂等时，结果未知只查询对账或人工处理，不自动重复创建。不能宣称端到端 Exactly Once。实现和验证边界见 `docs/release-guard/15-执行权与审批恢复.md`。
 
 公开 GitHub PR 只读接入包括真实 PR 与 CI、fork 内容、固定 SHA、分页与截断标记、PR 会话存储和独立工具白名单。尚未接入私有仓库权限、真实生产监控、流水线覆盖率、GitHub 评论和 PR 合并。CI 绿色不代表全部发布条件已满足。

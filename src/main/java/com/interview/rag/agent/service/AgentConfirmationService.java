@@ -1,6 +1,5 @@
 package com.interview.rag.agent.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.rag.agent.domain.AgentRun;
 import com.interview.rag.agent.domain.AgentStatus;
 import com.interview.rag.agent.domain.ConfirmationRequest;
@@ -11,8 +10,6 @@ import com.interview.rag.agent.repository.AgentRunRepository;
 import com.interview.rag.agent.repository.AgentMessageRepository;
 import com.interview.rag.agent.repository.AgentSessionRepository;
 import com.interview.rag.agent.repository.ConfirmationRequestRepository;
-import com.interview.rag.agent.tool.ToolExecutionService;
-import com.interview.rag.agent.tool.ToolResult;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,27 +23,25 @@ public class AgentConfirmationService {
 
     private final ConfirmationRequestRepository confirmationRepository;
     private final AgentRunRepository runRepository;
-    private final ToolExecutionService toolExecutionService;
+    private final ApprovalOperationService approvals;
     private final AgentMessageRepository messageRepository;
     private final AgentSessionRepository sessionRepository;
     private final AgentEventService eventService;
     private final AgentOutboxService outboxService;
-    private final ObjectMapper objectMapper;
 
     public AgentConfirmationService(ConfirmationRequestRepository confirmationRepository,
                                     AgentRunRepository runRepository,
-                                    ToolExecutionService toolExecutionService,
+                                    ApprovalOperationService approvals,
                                     AgentMessageRepository messageRepository,
                                     AgentSessionRepository sessionRepository, AgentEventService eventService,
-                                    AgentOutboxService outboxService, ObjectMapper objectMapper) {
+                                    AgentOutboxService outboxService) {
         this.confirmationRepository = confirmationRepository;
         this.runRepository = runRepository;
-        this.toolExecutionService = toolExecutionService;
+        this.approvals = approvals;
         this.messageRepository = messageRepository;
         this.sessionRepository = sessionRepository;
         this.eventService = eventService;
         this.outboxService = outboxService;
-        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -64,17 +59,30 @@ public class AgentConfirmationService {
         if (!MessageDigest.isEqual(sha256(token), sha256Stored(confirmation.getTokenHash()))) {
             throw new IllegalArgumentException("确认令牌无效");
         }
-        AgentRun run = runRepository.findById(confirmation.getRunId())
+        AgentRun run = runRepository.findLockedById(confirmation.getRunId())
                 .orElseThrow(() -> new IllegalArgumentException("Agent Run 不存在"));
+        if (!run.getSessionId().equals(confirmation.getSessionId())) {
+            throw new IllegalStateException("确认请求与执行会话不一致");
+        }
         if (run.getStatus() != AgentStatus.WAITING_CONFIRMATION) {
             throw new IllegalStateException("Agent Run 当前不等待确认");
         }
 
-        String resultJson = approved ? executeApprovalTool(confirmation, run) : "{}";
-        confirmation.setStatus(approved ? ConfirmationStatus.EXECUTED : ConfirmationStatus.REJECTED);
+        if (approved) {
+            approvals.prepare(confirmation);
+            confirmation.setStatus(ConfirmationStatus.APPROVED);
+            confirmationRepository.save(confirmation);
+            eventService.publish(run.getId(), "confirmationApproved", Map.of("approved", true));
+            return run.getId();
+        }
+        String resultJson = "{}";
+        confirmation.setStatus(ConfirmationStatus.REJECTED);
         confirmationRepository.save(confirmation);
-        run.setStatus(AgentStatus.RUNNING);
+        run.setStatus(AgentStatus.CREATED);
         run.setErrorMessage(null);
+        run.setExecutionToken(null);
+        run.setExecutionLeaseUntil(null);
+        run.setExecutionDeadlineAt(null);
         runRepository.save(run);
         sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
             session.setStatus(AgentStatus.RUNNING);
@@ -84,24 +92,12 @@ public class AgentConfirmationService {
         observation.setSessionId(run.getSessionId());
         observation.setRunId(run.getId());
         observation.setRole(MessageRole.TOOL);
-        observation.setContent(approved
-                ? "用户已确认并执行发布审批工具，工具结果：" + resultJson
-                : "用户拒绝创建发布审批单。不要再次请求相同审批，可继续给出评审结论。");
+        observation.setContent("用户拒绝创建发布审批单。不要再次请求相同审批，可继续给出评审结论。");
         messageRepository.save(observation);
         eventService.publish(run.getId(), "confirmationResolved", Map.of("approved", approved,
                 "result", resultJson));
         outboxService.enqueueRun(run.getId());
         return run.getId();
-    }
-
-    private String executeApprovalTool(ConfirmationRequest confirmation, AgentRun run) {
-        try {
-            ToolResult result = toolExecutionService.executeConfirmed(run.getId(), confirmation.getToolName(),
-                    confirmation.getArgumentsJson());
-            return objectMapper.writeValueAsString(result.value());
-        } catch (Exception e) {
-            throw new IllegalStateException("发布审批单创建失败: " + e.getMessage(), e);
-        }
     }
 
     private byte[] sha256(String value) {

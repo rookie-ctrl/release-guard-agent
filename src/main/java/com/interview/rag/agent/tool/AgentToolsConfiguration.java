@@ -59,7 +59,7 @@ public class AgentToolsConfiguration {
     AgentTool createApprovalTool(DevOpsGateway gateway) {
         return tool("createReleaseApproval", "创建发布审批单。仅在用户明确同意创建后调用。",
                 ToolRiskLevel.HIGH_RISK, new String[]{"serviceName", "version", "riskLevel", "summary"},
-                gateway::createReleaseApproval);
+                ignored -> { throw new ToolExecutionException("审批操作必须携带持久化的幂等键执行"); });
     }
 
     @Bean

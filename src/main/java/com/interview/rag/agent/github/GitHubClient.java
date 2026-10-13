@@ -85,6 +85,11 @@ public class GitHubClient {
             Thread.currentThread().interrupt();
             throw new GitHubApiException(0, "GitHub API 请求已中断");
         } catch (Exception e) {
+            if (e instanceof java.util.concurrent.ExecutionException
+                    && e.getCause() instanceof java.net.http.HttpTimeoutException) {
+                pending.cancel(true);
+                throw new GitHubApiException(0, "GitHub API 请求超时，请稍后重试");
+            }
             throw new GitHubApiException(0, "GitHub API 读取失败：网络异常、响应过大或返回内容无效");
         }
     }

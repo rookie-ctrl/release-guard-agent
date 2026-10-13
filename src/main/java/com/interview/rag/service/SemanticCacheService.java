@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.interview.rag.config.CacheProperties;
 import com.interview.rag.model.Reference;
+import com.interview.rag.security.PromptSecurity;
 import com.interview.rag.util.VectorUtil;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ import java.util.List;
 @Service
 public class SemanticCacheService {
 
-    private static final String KEY = "rag:qa:cache";
+    private static final String KEY = "rag:qa:cache:" + PromptSecurity.VERSION;
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;

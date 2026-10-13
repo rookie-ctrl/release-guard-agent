@@ -6,6 +6,8 @@ import com.interview.rag.agent.domain.AgentStatus;
 import com.interview.rag.agent.service.AgentConfirmationService;
 import com.interview.rag.agent.service.AgentEventService;
 import com.interview.rag.agent.service.AgentSessionService;
+import com.interview.rag.agent.service.AgentSessionAccessService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.MediaType;
@@ -20,35 +22,42 @@ public class AgentController {
     private final AgentSessionService sessionService;
     private final AgentEventService eventService;
     private final AgentConfirmationService confirmationService;
+    private final AgentSessionAccessService accessService;
 
     public AgentController(AgentSessionService sessionService,
-                           AgentEventService eventService, AgentConfirmationService confirmationService) {
+                           AgentEventService eventService, AgentConfirmationService confirmationService,
+                           AgentSessionAccessService accessService) {
         this.sessionService = sessionService;
         this.eventService = eventService;
         this.confirmationService = confirmationService;
+        this.accessService = accessService;
     }
 
     @PostMapping("/sessions")
-    public SessionResponse createSession(@Valid @RequestBody CreateSessionRequest request) {
-        AgentSession session = sessionService.createSession(request.userId(), request.pullRequestUrl());
+    public SessionResponse createSession(@Valid @RequestBody CreateSessionRequest request, HttpServletRequest http) {
+        AgentSession session = sessionService.createSession(request.userId(), request.pullRequestUrl(),
+                AgentSessionAccessService.ownerHash(http.getSession(true)));
         return sessionResponse(session);
     }
 
     @PostMapping("/sessions/{sessionId}/messages")
     public RunResponse sendMessage(@PathVariable String sessionId,
-                                   @Valid @RequestBody SendMessageRequest request) {
+                                   @Valid @RequestBody SendMessageRequest request, HttpServletRequest http) {
+        accessService.requireSession(sessionId, http.getSession(false));
         AgentRun run = sessionService.submitMessage(sessionId, request.message());
         return new RunResponse(run.getId(), sessionId, run.getStatus());
     }
 
     @GetMapping("/sessions/{sessionId}")
-    public SessionResponse getSession(@PathVariable String sessionId) {
+    public SessionResponse getSession(@PathVariable String sessionId, HttpServletRequest http) {
+        accessService.requireSession(sessionId, http.getSession(false));
         AgentSession session = sessionService.getSession(sessionId);
         return sessionResponse(session);
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
-    public java.util.List<MessageResponse> getMessages(@PathVariable String sessionId) {
+    public java.util.List<MessageResponse> getMessages(@PathVariable String sessionId, HttpServletRequest http) {
+        accessService.requireSession(sessionId, http.getSession(false));
         return sessionService.getMessages(sessionId).stream()
                 .map(message -> new MessageResponse(message.getRole(), message.getContent()))
                 .toList();
@@ -57,7 +66,8 @@ public class AgentController {
     @GetMapping(value = "/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<ServerSentEvent<String>> events(@PathVariable String runId,
                                                  @RequestHeader(value = "Last-Event-ID", required = false)
-                                                 String lastEventId) {
+                                                 String lastEventId, HttpServletRequest http) {
+        accessService.requireRun(runId, http.getSession(false));
         AgentRun run = sessionService.getRun(runId);
         long after = parseSequence(lastEventId);
         boolean terminal = run.getStatus() == AgentStatus.COMPLETED
@@ -68,7 +78,8 @@ public class AgentController {
 
     @PostMapping("/confirmations/{confirmationId}/decision")
     public DecisionResponse decide(@PathVariable String confirmationId,
-                                   @Valid @RequestBody ConfirmationDecision request) {
+                                   @Valid @RequestBody ConfirmationDecision request, HttpServletRequest http) {
+        accessService.requireConfirmation(confirmationId, http.getSession(false));
         String runId = confirmationService.decide(confirmationId, request.token(), request.approved());
         return new DecisionResponse(confirmationId, request.approved());
     }

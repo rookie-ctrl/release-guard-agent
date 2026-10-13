@@ -7,6 +7,10 @@ import com.interview.rag.exception.RateLimitException;
 import com.interview.rag.model.DocFragment;
 import com.interview.rag.model.Reference;
 import com.interview.rag.repository.QaRecordRepository;
+import com.interview.rag.security.PromptSecurity;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
@@ -99,7 +103,7 @@ public class ChatService {
                 }
 
                 // 4. 拼装 Prompt:系统约束 + 编号参考资料 + 问题
-                String prompt = buildPrompt(question, fragments);
+                List<ChatMessage> prompt = buildMessages(question, fragments);
                 StringBuilder answer = new StringBuilder();
                 StreamingChatModel model = chatModelManager.streamingChatModel();
 
@@ -149,17 +153,12 @@ public class ChatService {
         });
     }
 
-    private String buildPrompt(String question, List<DocFragment> fragments) {
-        StringBuilder sb = new StringBuilder(systemPrompt);
-        sb.append("\n\n【参考资料】\n");
-        for (int i = 0; i < fragments.size(); i++) {
-            DocFragment f = fragments.get(i);
-            sb.append("[").append(i + 1).append("]《").append(f.docName())
-                    .append("》第").append(f.chunkIndex() + 1).append("段:\n")
-                    .append(f.content()).append("\n\n");
-        }
-        sb.append("【用户问题】\n").append(question);
-        return sb.toString();
+    private List<ChatMessage> buildMessages(String question, List<DocFragment> fragments) {
+        var sources = fragments.stream().map(f -> java.util.Map.of(
+                "document", f.docName(), "chunk", f.chunkIndex(), "content", f.content())).toList();
+        return List.of(SystemMessage.from(systemPrompt + "\n" + PromptSecurity.RULES),
+                PromptSecurity.dataMessage("retrieved-documents", sources, objectMapper),
+                UserMessage.from(question));
     }
 
     private String snippet(String content) {

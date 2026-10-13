@@ -2,6 +2,8 @@ package com.interview.rag.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -14,6 +16,12 @@ import java.util.Map;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, String>> handleStatus(ResponseStatusException e) {
+        return ResponseEntity.status(e.getStatusCode())
+                .body(Map.of("error", e.getReason() == null ? "请求被拒绝" : e.getReason()));
+    }
 
     @ExceptionHandler(RateLimitException.class)
     @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)

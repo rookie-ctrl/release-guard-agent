@@ -3,372 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ReleaseGuard 发布评审 Agent</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-            background: #f5f6f8; color: #222; min-height: 100vh;
-        }
-        header {
-            background: #1f2937; color: #fff; padding: 16px 24px;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        header h1 { font-size: 18px; font-weight: 600; }
-        header .stats { font-size: 13px; color: #9ca3af; }
-        .container { display: flex; gap: 16px; padding: 16px 24px; height: calc(100vh - 70px); }
-        .panel {
-            background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
-            display: flex; flex-direction: column; overflow: hidden;
-        }
-        .left { width: 320px; flex-shrink: 0; }
-        .right { flex: 1; }
-        .panel h2 { font-size: 14px; padding: 14px 16px; border-bottom: 1px solid #eee; color: #374151; }
-        .doc-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; overflow-y: auto; }
-        .doc-item {
-            border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 13px;
-            display: flex; justify-content: space-between; align-items: center; gap: 8px;
-        }
-        .doc-name { word-break: break-all; }
-        .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
-        .badge.PENDING { background: #fef3c7; color: #92400e; }
-        .badge.PARSING { background: #dbeafe; color: #1e40af; }
-        .badge.SUCCESS { background: #d1fae5; color: #065f46; }
-        .badge.FAILED { background: #fee2e2; color: #991b1b; }
-        .del-btn { border: none; background: none; color: #9ca3af; cursor: pointer; font-size: 14px; }
-        .del-btn:hover { color: #ef4444; }
-        .retry-btn { border: none; background: none; color: #2563eb; cursor: pointer; font-size: 14px; }
-        .retry-btn:hover { color: #1d4ed8; }
-        .progress { font-size: 11px; color: #6b7280; }
-        .chat-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-        .msg { max-width: 78%; padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
-        .msg.user { align-self: flex-end; background: #2563eb; color: #fff; }
-        .msg.bot { align-self: flex-start; background: #f3f4f6; }
-        .msg.error { align-self: flex-start; background: #fee2e2; color: #991b1b; }
-        .cache-badge { align-self: flex-start; font-size: 11px; color: #059669; background: #d1fae5; padding: 2px 8px; border-radius: 10px; }
-        .refs { align-self: flex-start; font-size: 12px; color: #6b7280; background: #f9fafb; border: 1px dashed #d1d5db; border-radius: 8px; padding: 8px 12px; max-width: 78%; }
-        .refs .ref { margin-top: 2px; }
-        .chat-input { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #eee; }
-        .chat-input input {
-            flex: 1; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px; outline: none;
-        }
-        .chat-input input:focus { border-color: #2563eb; }
-        button { border: none; border-radius: 8px; padding: 10px 16px; background: #2563eb; color: #fff; cursor: pointer; font-size: 14px; }
-        button:disabled { background: #9ca3af; cursor: not-allowed; }
-        .upload-row { display: flex; gap: 8px; align-items: center; }
-        .upload-row input[type=file] { font-size: 12px; flex: 1; }
-        .upload-meta { display: flex; gap: 8px; }
-        .upload-meta input, .upload-meta select { min-width: 0; flex: 1; padding: 7px; border: 1px solid #d1d5db; border-radius: 6px; }
-        .tip { font-size: 12px; color: #9ca3af; }
-    </style>
+    <meta name="theme-color" content="#254e40">
+    <meta name="description" content="ReleaseGuard 发布评审工作台，连接代码变更、CI 与团队知识，让每一次发布都有据可依。">
+    <title>ReleaseGuard · 发布评审工作台</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23254e40'/%3E%3Cpath d='M16 6l8 3v7c0 5-8 10-8 10S8 21 8 16V9z' fill='none' stroke='%23fff' stroke-width='1.8'/%3E%3Cpath d='m12 16 3 3 5-6' fill='none' stroke='%23fff' stroke-width='1.8'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/styles.css?v=20261006-doc-preview-2">
+    <script src="/app.js?v=20261006-doc-preview-2" defer></script>
 </head>
 <body>
-<header>
-    <h1>🛡️ ReleaseGuard 发布评审 Agent</h1>
-    <div class="stats" id="statsBar">加载统计中...</div>
-</header>
-<div class="container">
-    <!-- 左:文档管理 -->
-    <div class="panel left">
-        <h2>📄 发布规范与事故知识</h2>
-        <div class="doc-body">
-            <div class="upload-meta">
-                <select id="documentType">
-                    <option value="GENERAL">通用文档</option>
-                    <option value="RELEASE_POLICY">发布规范</option>
-                    <option value="INCIDENT">历史事故</option>
-                    <option value="RUNBOOK">运维手册</option>
-                </select>
-                <input id="serviceName" placeholder="服务名(可选)">
-            </div>
-            <div class="upload-row">
-                <input type="file" id="fileInput" accept=".pdf,.docx,.doc,.md,.txt">
-                <button id="uploadBtn">上传</button>
-            </div>
-            <div class="tip">上传发布规范或历史复盘，Agent 会按类型和服务名检索</div>
-            <div id="docList"></div>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 5v15M12 5C9 3 5 3 3 4v15c3-1 6-1 9 1 3-2 6-2 9-1V4c-2-1-6-1-9 1Z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M9 15v-4m5 4V7m5 8V4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v10M18 17V8a3 3 0 0 0-3-3h-3m3-3-3 3 3 3"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11a9 9 0 0 1-9 9 10 10 0 0 1-4-.9L3 21l1.9-5A10 10 0 0 1 4 12a9 9 0 0 1 17-1Z"/><path d="M8 11h8m-8 4h5"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v5h16v-5"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8l-5-5Zm0 0v5h5M8 12h8m-8 4h6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 9M3 4v6h6"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 .6-1.5 1-1.5 2M12 16v.5"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 5-2 2a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m4 2 2-2a4 4 0 1 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 0) scale(.92)"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3v.5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="m7 6-6 6 6 6m10-12 6 6-6 6M14 4l-4 16"/></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M20 3C8 3 3 7 3 13a7 7 0 0 0 7 7c6 0 10-5 10-17ZM4 20 15 9"/></symbol>
+    <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+</svg>
+<a class="skip-link" href="#main">跳转到工作台</a>
+<div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+<aside class="sidebar" id="sidebar" aria-label="主导航">
+    <a class="brand" href="/" aria-label="ReleaseGuard 首页"><span class="brand-mark"><svg class="icon"><use href="#i-shield"/></svg></span><span class="brand-wordmark">ReleaseGuard<span>让发布更从容</span></span></a>
+    <div class="workspace-label">WORKSPACE <span>个人工作空间</span></div>
+    <nav class="navigation">
+        <button class="nav-item active" id="navWorkspace" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>评审工作台<span class="nav-dot"></span></button>
+        <button class="nav-item" id="navKnowledge"><svg class="icon"><use href="#i-book"/></svg>团队知识库<span class="nav-count" id="navDocCount">—</span></button>
+        <button class="nav-item" id="navStats"><svg class="icon"><use href="#i-chart"/></svg>用量统计<svg class="icon nav-arrow"><use href="#i-arrow"/></svg></button>
+    </nav>
+    <div class="sidebar-note"><div class="note-icon"><svg class="icon"><use href="#i-leaf"/></svg></div><h3>好的发布，始于好的准备。</h3><p>把规范和经验交给知识库，<br>让每一次评审都有迹可循。</p><button class="text-button" id="guideBtn">了解如何开始<svg class="icon"><use href="#i-arrow"/></svg></button></div>
+    <div class="sidebar-bottom"><button class="nav-item" id="helpBtn"><svg class="icon"><use href="#i-help"/></svg>使用指南</button><div class="workspace-profile"><span class="profile-avatar">RG</span><div>发布评审空间<span>ReleaseGuard Agent</span></div><span class="profile-dot"></span></div></div>
+</aside>
+<main class="main" id="main">
+    <header class="topbar"><div class="breadcrumb"><button class="icon-button menu-toggle" id="menuBtn" aria-label="打开导航" aria-expanded="false" aria-controls="sidebar"><svg class="icon"><use href="#i-menu"/></svg></button><span>工作空间</span><span class="breadcrumb-divider">/</span><strong>发布评审</strong></div><div class="topbar-right"><span class="connection-status" id="connectionStatus" role="status"><span class="status-dot"></span><span id="connectionText">正在连接</span></span><span class="topbar-divider"></span><span class="today" id="today"></span></div></header>
+    <div class="page-content">
+        <section class="page-heading"><div><div class="eyebrow">A LITTLE MORE CONFIDENCE, EVERY RELEASE.</div><h1>发布之前，多一份确定<span class="heading-period">。</span></h1><p>连接代码变更与团队知识，让每一次发布都有据可依。</p></div><button class="button secondary new-review" id="newReviewBtn"><svg class="icon"><use href="#i-plus"/></svg>新建评审</button></section>
+        <section class="metrics" aria-label="今日用量概览" id="statsBar">
+            <article class="metric"><div class="metric-label">今日问答<svg class="icon"><use href="#i-chat"/></svg></div><div class="metric-value"><span id="queryCount">—</span><span class="metric-unit">次</span></div><span class="metric-caption">持续对话，深入每个细节</span></article>
+            <article class="metric"><div class="metric-label">知识库文档<svg class="icon"><use href="#i-book"/></svg></div><div class="metric-value"><span id="documentCount">—</span><span class="metric-unit">份</span></div><span class="metric-caption">沉淀经验，成为评审依据</span></article>
+            <article class="metric"><div class="metric-label">今日 Token<svg class="icon"><use href="#i-spark"/></svg></div><div class="metric-value"><span id="tokenCount">—</span><span class="metric-unit">tokens</span></div><span class="metric-caption">模型使用量一目了然</span></article>
+            <article class="metric"><div class="metric-label">缓存命中率<svg class="icon"><use href="#i-chart"/></svg></div><div class="metric-value"><span id="cacheRate">—</span><span class="metric-unit">%</span></div><span class="metric-caption">复用已有答案，减少消耗</span></article>
+        </section>
+        <div class="workbench">
+            <section class="review-panel panel" aria-labelledby="reviewTitle">
+                <div class="review-setup">
+                    <div class="section-heading"><div class="section-title"><span class="section-icon"><svg class="icon"><use href="#i-pr"/></svg></span><h2 id="reviewTitle">发布评审</h2></div><span class="quiet-label">从一次代码变更开始</span></div>
+                    <form id="reviewForm" novalidate><label class="field-label" for="pullRequestInput">公开 GitHub Pull Request</label><div class="pr-input-row"><div class="input-with-icon pr-input"><svg class="icon"><use href="#i-link"/></svg><input type="url" id="pullRequestInput" placeholder="https://github.com/owner/repo/pull/123" autocomplete="off" spellcheck="false" aria-describedby="prError currentReview"></div><button class="button primary" id="startReviewBtn" type="submit">开始评审<svg class="icon"><use href="#i-arrow"/></svg></button></div><div class="field-error" id="prError" role="alert" hidden></div></form>
+                    <div class="review-helper"><span>读取代码变更与 CI，结合知识库给出建议</span><button class="text-button" id="demoSessionBtn">体验演示<svg class="icon"><use href="#i-arrow"/></svg></button></div>
+                    <div class="review-steps" aria-label="评审流程"><span id="step1"><b>01</b>接入代码变更</span><i></i><span id="step2"><b>02</b>关联团队知识</span><i></i><span id="step3"><b>03</b>生成评审建议</span></div>
+                </div>
+                <div class="conversation-heading"><div><svg class="icon"><use href="#i-chat"/></svg><h3>评审对话</h3></div><div class="conversation-actions"><button class="text-button" id="focusChatBtn" type="button" aria-pressed="false"><svg class="icon"><use href="#i-expand"/></svg><span id="focusChatText">专注对话</span></button><span class="run-status" id="runStatus" role="status"><span class="status-dot"></span><span id="runStatusText">待开始</span></span></div></div>
+                <div class="session-context" id="currentReview" hidden></div>
+                <div class="chat-body" id="chatBody" role="region" aria-label="评审对话记录" tabindex="0">
+                    <div class="welcome" id="welcome"><div class="welcome-emblem"><span class="emblem-orbit orbit-one"></span><span class="emblem-orbit orbit-two"></span><span class="emblem-dot"></span><div class="emblem-center"><svg class="icon"><use href="#i-shield"/></svg></div><span class="emblem-spark"><svg class="icon"><use href="#i-spark"/></svg></span></div><div class="eyebrow welcome-eyebrow">YOUR RELEASE, WELL CONSIDERED.</div><h3>让复杂的变更，<br class="mobile-break">有清晰的下一步。</h3><p>粘贴 PR 链接，或从演示开始。<br>我会梳理风险、寻找依据，陪你把发布准备得更周全。</p>
+                        <div class="suggestions" aria-label="推荐问题"><button class="suggestion" data-question="请识别这次变更的主要风险，并给出代码与知识库依据。"><svg class="icon"><use href="#i-code"/></svg><span>识别变更风险<small>从细节发现潜在问题</small></span><svg class="icon suggestion-arrow"><use href="#i-arrow"/></svg></button><button class="suggestion" data-question="请检查测试、CI 和发布规范，列出发布前尚未确认的事项。"><svg class="icon"><use href="#i-check"/></svg><span>检查发布准备<small>理清发布前的待办</small></span><svg class="icon suggestion-arrow"><use href="#i-arrow"/></svg></button><button class="suggestion" data-question="请分析这次变更的回滚风险，给出回滚方案和验证步骤。"><svg class="icon"><use href="#i-retry"/></svg><span>梳理回滚方案<small>为变化留一条退路</small></span><svg class="icon suggestion-arrow"><use href="#i-arrow"/></svg></button></div>
+                    </div>
+                    <div id="messageList" class="message-list"></div>
+                </div>
+                <div class="composer-area"><form class="composer" id="chatForm"><label class="sr-only" for="questionInput">评审问题</label><textarea id="questionInput" rows="1" maxlength="12000" placeholder="继续追问，或说说你关心的发布细节…"></textarea><button class="send-button" id="sendBtn" type="submit" aria-label="发送消息" title="发送消息"><svg class="icon"><use href="#i-send"/></svg></button></form><div class="composer-footer"><span><svg class="icon"><use href="#i-shield"/></svg>高风险操作需经你确认</span><span class="keyboard-tip">Enter 发送<span>·</span>Shift + Enter 换行</span></div></div>
+            </section>
+            <aside class="knowledge-panel panel" id="knowledgePanel" aria-labelledby="knowledgeTitle">
+                <div class="knowledge-heading"><div class="section-heading"><div class="section-title"><span class="section-icon"><svg class="icon"><use href="#i-book"/></svg></span><h2 id="knowledgeTitle">团队知识库</h2></div><span class="count-pill" id="knowledgeCount">—</span></div><p>让沉淀的经验，成为可靠的依据。</p></div>
+                <div class="knowledge-content">
+                    <label class="dropzone" id="dropzone" for="fileInput" tabindex="0" role="button" aria-label="选择或拖入知识库文档"><span class="upload-icon"><svg class="icon"><use href="#i-upload"/></svg></span><strong id="fileName">点击上传，或拖入文档</strong><span id="fileHint">PDF、Word、Markdown、TXT · 最大 50 MB</span><input class="sr-only" type="file" id="fileInput" accept=".pdf,.docx,.doc,.md,.txt" tabindex="-1"></label>
+                    <div class="upload-meta"><div><label class="field-label" for="documentType">文档类型</label><select id="documentType"><option value="GENERAL">通用文档</option><option value="RELEASE_POLICY">发布规范</option><option value="INCIDENT">历史事故</option><option value="RUNBOOK">运维手册</option></select></div><div><label class="field-label" for="serviceName">关联服务 <span>可选</span></label><input id="serviceName" placeholder="如 order-service" maxlength="100"></div></div>
+                    <button class="button upload-button" id="uploadBtn" disabled><svg class="icon"><use href="#i-plus"/></svg><span id="uploadButtonText">添加到知识库</span></button>
+                    <div class="library-divider"></div><div class="library-toolbar"><h3>全部文档 <span id="listCount"></span></h3><button class="icon-button" id="refreshDocsBtn" aria-label="刷新文档" title="刷新文档"><svg class="icon"><use href="#i-retry"/></svg></button></div><div class="input-with-icon search-input"><svg class="icon"><use href="#i-search"/></svg><input id="docSearch" placeholder="搜索文档或服务…" aria-label="搜索文档或服务"></div>
+                    <div class="document-filters" role="group" aria-label="筛选文档类型"><button class="filter active" data-filter="ALL" aria-pressed="true">全部</button><button class="filter" data-filter="RELEASE_POLICY" aria-pressed="false">规范</button><button class="filter" data-filter="INCIDENT" aria-pressed="false">事故</button><button class="filter" data-filter="RUNBOOK" aria-pressed="false">手册</button><button class="filter" data-filter="GENERAL" aria-pressed="false">通用</button></div>
+                    <div id="docList" class="doc-list" aria-label="知识库文档"><div class="library-empty"><svg class="icon"><use href="#i-book"/></svg><strong>正在读取知识库</strong><p>稍等片刻，让经验就位。</p></div></div>
+                </div>
+                <div class="knowledge-footnote"><svg class="icon"><use href="#i-spark"/></svg><p>文档入库后，Agent 会按类型与服务检索，<br>在评审中引用相关知识。</p></div>
+            </aside>
         </div>
+        <footer class="page-footer"><span>RELEASEGUARD</span><p>认真对待每一次变更。</p><span>更清晰的依据 · 更从容的发布</span></footer>
     </div>
-    <!-- 右:智能问答 -->
-    <div class="panel right">
-        <h2>🤖 GitHub PR 与多轮评审</h2>
-        <div style="padding: 12px; border-bottom: 1px solid #e5e7eb;">
-            <label for="pullRequestInput">公开 GitHub PR 链接</label>
-            <input type="url" id="pullRequestInput" placeholder="https://github.com/owner/repo/pull/123"
-                   style="width: 100%; box-sizing: border-box; margin: 8px 0; padding: 8px;" />
-            <button id="startReviewBtn">开始 PR 评审</button>
-            <button id="demoSessionBtn">演示发布</button>
-            <div class="tip" id="currentReview">填写公开 PR 链接开始评审，或选择演示发布。</div>
-        </div>
-        <div class="chat-body" id="chatBody">
-            <div class="msg bot">上传规范后，在上方填入公开 GitHub PR 链接。我会读取代码变更、必要上下文和 CI，并结合知识库评审。演示发布使用预设数据。</div>
-        </div>
-        <div class="chat-input">
-            <input type="text" id="questionInput" placeholder="继续追问，例如：如果字段改成兼容新增，风险会怎样？" />
-            <button id="sendBtn">发送</button>
-        </div>
-    </div>
-</div>
-
-<script>
-    const $ = id => document.getElementById(id);
-
-    // ---------- 文档管理 ----------
-    async function loadDocs() {
-        const res = await fetch('/api/documents');
-        const docs = await res.json();
-        $('docList').innerHTML = docs.map(d => {
-            const progress = (d.status === 'PARSING' || d.status === 'FAILED') && d.parsedChunks != null
-                ? `<span class="progress">已入库 ${d.parsedChunks} 块</span>` : '';
-            const retry = d.status === 'FAILED'
-                ? `<button class="retry-btn" onclick="retryDoc(${d.id})" title="重试(从断点续传)">↻</button>` : '';
-            return `
-            <div class="doc-item">
-                <span class="doc-name">${d.docName}${progress}</span>
-                <span class="badge ${d.status}">${statusText(d.status)}</span>
-                ${retry}
-                <button class="del-btn" onclick="delDoc(${d.id})" title="删除">✕</button>
-            </div>`;
-        }).join('') || '<div class="tip">暂无文档</div>';
-    }
-    function statusText(s) {
-        return {PENDING: '待解析', PARSING: '解析中', SUCCESS: '已入库', FAILED: '失败'}[s] || s;
-    }
-    async function delDoc(id) {
-        await fetch('/api/documents/' + id, {method: 'DELETE'});
-        loadDocs();
-    }
-    async function retryDoc(id) {
-        await fetch('/api/documents/' + id + '/retry', {method: 'POST'});
-        loadDocs();
-    }
-    $('uploadBtn').onclick = async () => {
-        const file = $('fileInput').files[0];
-        if (!file) return alert('请先选择文件');
-        const form = new FormData();
-        form.append('file', file);
-        form.append('documentType', $('documentType').value);
-        form.append('serviceName', $('serviceName').value.trim());
-        $('uploadBtn').disabled = true;
-        await fetch('/api/documents', {method: 'POST', body: form});
-        $('uploadBtn').disabled = false;
-        $('fileInput').value = '';
-        loadDocs();
-    };
-    // 轮询解析状态
-    loadDocs();
-    setInterval(loadDocs, 3000);
-
-    // ---------- 智能问答(SSE 流式) ----------
-    function addMsg(text, cls) {
-        const div = document.createElement('div');
-        div.className = 'msg ' + (cls || 'bot');
-        div.textContent = text;
-        $('chatBody').appendChild(div);
-        $('chatBody').scrollTop = $('chatBody').scrollHeight;
-        return div;
-    }
-    let sessionId = localStorage.getItem('releaseGuardSessionId');
-    let activeEventSource = null;
-    let assistantMessage = null;
-
-    function setBusy(busy) {
-        $('sendBtn').disabled = busy;
-        $('startReviewBtn').disabled = busy;
-        $('demoSessionBtn').disabled = busy;
-        $('pullRequestInput').disabled = busy;
-    }
-
-    function showSession(session) {
-        if (session.mode === 'GITHUB_PR') {
-            const context = JSON.parse(session.pullRequestContextJson);
-            $('pullRequestInput').value = context.url;
-            $('currentReview').textContent = '当前 PR：' + context.url + ' ｜提交 ' + context.headSha.slice(0, 12);
-        } else {
-            $('pullRequestInput').value = '';
-            $('currentReview').textContent = '当前为演示发布模式：order-service v2.3.7，工具返回预设数据。';
-        }
-    }
-
-    async function createReviewSession(pullRequestUrl) {
-        const response = await fetch('/api/agent/sessions', {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({userId: 'demo-user', pullRequestUrl: pullRequestUrl || null})
-        });
-        const session = await response.json();
-        if (!response.ok) throw new Error(session.error || '创建评审会话失败');
-        if (activeEventSource) activeEventSource.close();
-        activeEventSource = null;
-        sessionId = session.sessionId;
-        localStorage.setItem('releaseGuardSessionId', sessionId);
-        localStorage.removeItem('releaseGuardRunId');
-        $('chatBody').replaceChildren();
-        showSession(session);
-        addMsg(pullRequestUrl ? '已绑定 PR 提交。可以持续追问；PR 有新提交时请重新开始评审。'
-                : '已创建演示发布会话，查询结果为预设数据。');
-    }
-
-    async function initializeSession() {
-        if (sessionId) {
-            const response = await fetch('/api/agent/sessions/' + sessionId);
-            if (response.ok) {
-                showSession(await response.json());
-                const history = await fetch('/api/agent/sessions/' + sessionId + '/messages');
-                if (history.ok) {
-                    const messages = await history.json();
-                    messages.filter(message => message.role !== 'TOOL')
-                        .forEach(message => addMsg(message.content, message.role === 'USER' ? 'user' : 'bot'));
-                }
-                const activeRunId = localStorage.getItem('releaseGuardRunId');
-                if (activeRunId) {
-                    setBusy(true);
-                    subscribeRun(activeRunId);
-                }
-                return;
-            }
-        }
-        sessionId = null;
-        localStorage.removeItem('releaseGuardSessionId');
-        localStorage.removeItem('releaseGuardRunId');
-    }
-
-    async function send() {
-        const question = $('questionInput').value.trim();
-        if (!question) return;
-        if (!sessionId) {
-            addMsg('请先填写 PR 链接并开始评审，或选择演示发布。', 'error');
-            return;
-        }
-        addMsg(question, 'user');
-        $('questionInput').value = '';
-        setBusy(true);
-        try {
-            const response = await fetch('/api/agent/sessions/' + sessionId + '/messages', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({message: question})
-            });
-            const run = await response.json();
-            if (!response.ok) throw new Error(run.error || '提交评审失败');
-            localStorage.setItem('releaseGuardRunId', run.runId);
-            subscribeRun(run.runId);
-        } catch (error) {
-            addMsg(error.message, 'error');
-            setBusy(false);
-        }
-    }
-
-    function subscribeRun(runId) {
-        if (activeEventSource) activeEventSource.close();
-        assistantMessage = null;
-        activeEventSource = new EventSource('/api/agent/runs/' + runId + '/events');
-        activeEventSource.addEventListener('plan', event => {
-            const data = JSON.parse(event.data);
-            addMsg('🧭 ' + data.message);
-        });
-        activeEventSource.addEventListener('toolCall', event => {
-            const data = JSON.parse(event.data);
-            addMsg('🔧 调用 ' + data.tool + ' (' + data.riskLevel + ')\n' + JSON.stringify(data.arguments));
-        });
-        activeEventSource.addEventListener('toolResult', event => {
-            const data = JSON.parse(event.data);
-            addMsg('✅ ' + data.tool + ' 返回\n' + JSON.stringify(data.result).slice(0, 900));
-        });
-        activeEventSource.addEventListener('confirmation', event => showConfirmation(JSON.parse(event.data)));
-        activeEventSource.addEventListener('confirmationResolved', event => {
-            const data = JSON.parse(event.data);
-            addMsg(data.approved ? '✅ 已确认审批操作，继续完成评审。' : '已拒绝审批操作，Agent 将继续给出结论。');
-        });
-        activeEventSource.addEventListener('token', event => {
-            const data = JSON.parse(event.data);
-            if (!assistantMessage) assistantMessage = addMsg('');
-            assistantMessage.textContent += data.text;
-            $('chatBody').scrollTop = $('chatBody').scrollHeight;
-        });
-        activeEventSource.addEventListener('runCompleted', () => finishRun());
-        activeEventSource.addEventListener('runFailed', event => {
-            addMsg(JSON.parse(event.data).message, 'error');
-            finishRun();
-        });
-        activeEventSource.onerror = () => {
-            if (activeEventSource && activeEventSource.readyState === EventSource.CLOSED) {
-                addMsg('评审事件流已关闭，请检查执行状态后重试。', 'error');
-                finishRun();
-            }
-        };
-    }
-
-    function showConfirmation(data) {
-        const card = document.createElement('div');
-        card.className = 'msg bot';
-        const details = document.createElement('div');
-        details.textContent = '⚠️ Agent 请求执行高风险操作：' + data.tool + '\n' + JSON.stringify(data.arguments);
-        const approve = document.createElement('button');
-        approve.textContent = '确认';
-        const reject = document.createElement('button');
-        reject.textContent = '拒绝';
-        reject.style.marginLeft = '8px';
-        const decide = async approved => {
-            approve.disabled = true;
-            reject.disabled = true;
-            const response = await fetch('/api/agent/confirmations/' + data.confirmationId + '/decision', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({token: data.token, approved})
-            });
-            if (!response.ok) {
-                const result = await response.json();
-                addMsg(result.error || '确认请求失败', 'error');
-                approve.disabled = false;
-                reject.disabled = false;
-            }
-        };
-        approve.onclick = () => decide(true);
-        reject.onclick = () => decide(false);
-        card.append(details, document.createElement('br'), approve, reject);
-        $('chatBody').appendChild(card);
-    }
-
-    function finishRun() {
-        if (activeEventSource) activeEventSource.close();
-        activeEventSource = null;
-        setBusy(false);
-        $('questionInput').focus();
-        localStorage.removeItem('releaseGuardRunId');
-        loadStats();
-    }
-
-    $('sendBtn').onclick = send;
-    async function startReview(demo) {
-        const url = $('pullRequestInput').value.trim();
-        if (!demo && !url) {
-            addMsg('请填写公开 GitHub PR 链接。', 'error');
-            return;
-        }
-        setBusy(true);
-        try {
-            await createReviewSession(demo ? null : url);
-            $('questionInput').value = demo ? '帮我评审 order-service v2.3.7 能不能发布'
-                    : '请评审这个 PR，读取变更与 CI，并结合知识库规范给出风险、代码依据、改进建议和未确认事项。';
-            await send();
-        } catch (error) {
-            addMsg(error.message, 'error');
-            setBusy(false);
-        }
-    }
-    $('startReviewBtn').onclick = () => startReview(false);
-    $('demoSessionBtn').onclick = () => startReview(true);
-    $('questionInput').addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
-    setBusy(true);
-    initializeSession().catch(error => addMsg(error.message, 'error'))
-        .finally(() => { if (!activeEventSource) setBusy(false); });
-
-    // ---------- 统计 ----------
-    async function loadStats() {
-        const res = await fetch('/api/stats');
-        const s = await res.json();
-        $('statsBar').textContent =
-            `今日问答 ${s.totalQueries} 次 | token 消耗 ${s.totalTokens} | 缓存命中率 ${(s.cacheHitRate * 100).toFixed(1)}% | 文档 ${s.documentCount} 份`;
-    }
-    loadStats();
-</script>
+</main>
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
+<dialog class="modal document-dialog" id="documentDialog" aria-labelledby="documentTitle">
+    <div class="modal-heading"><span class="eyebrow">KNOWLEDGE DOCUMENT</span><button class="icon-button" data-close="documentDialog" aria-label="关闭文档预览"><svg class="icon"><use href="#i-close"/></svg></button></div>
+    <h2 id="documentTitle">文档内容</h2>
+    <p class="document-description" id="documentDescription"></p>
+    <div class="document-toolbar"><div class="document-view-options" role="group" aria-label="文档查看方式"><button class="filter active" id="documentReadBtn" type="button" aria-pressed="true">阅读预览</button><button class="filter" id="documentRawBtn" type="button" aria-pressed="false">原始文本</button></div><a class="button secondary" id="documentDownload" download><svg class="icon"><use href="#i-file"/></svg>下载原文件</a></div>
+    <p class="document-preview-note" id="documentPreviewNote" role="status">正在加载文档内容…</p>
+    <div class="document-content message-text" id="documentContent" tabindex="0" aria-label="文档内容" aria-busy="true"></div>
+    <pre class="document-raw" id="documentRaw" tabindex="0" aria-label="文档原始文本" hidden></pre>
+</dialog>
+<dialog class="modal" id="guideDialog" aria-labelledby="guideTitle"><div class="modal-heading"><span class="eyebrow">GETTING STARTED</span><button class="icon-button" data-close="guideDialog" aria-label="关闭指南"><svg class="icon"><use href="#i-close"/></svg></button></div><h2 id="guideTitle">三步，开始一场有依据的评审。</h2><p class="modal-intro">从团队经验出发，把变更准备得更周全。</p><ol class="guide-steps"><li><span>01</span><div><h3>沉淀团队知识</h3><p>上传发布规范、事故复盘或运维手册，可按服务关联。没有文档也能先体验评审。</p></div></li><li><span>02</span><div><h3>连接一次变更</h3><p>粘贴公开的 GitHub PR 链接。评审固定在当前提交；PR 有新提交时，请重新开始评审。</p></div></li><li><span>03</span><div><h3>持续对话，明确下一步</h3><p>结合变更、CI 与知识库梳理风险。继续追问细节，高风险操作会单独请求你的确认。</p></div></li></ol><div class="guide-demo-note">演示使用 order-service v2.3.7 的预设发布数据。</div><button class="button primary modal-action" data-close="guideDialog">开始准备<svg class="icon"><use href="#i-arrow"/></svg></button></dialog>
+<dialog class="modal" id="statsDialog" aria-labelledby="statsTitle"><div class="modal-heading"><span class="eyebrow">WORKSPACE USAGE</span><button class="icon-button" data-close="statsDialog" aria-label="关闭统计"><svg class="icon"><use href="#i-close"/></svg></button></div><h2 id="statsTitle">今日用量，一目了然。</h2><p class="modal-intro" id="statsDialogNote">统计来自当前工作空间的问答记录。</p><div class="usage-list"><div><span>今日问答</span><strong id="usageQueries">—</strong></div><div><span>Token 消耗</span><strong id="usageTokens">—</strong></div><div><span>缓存命中次数</span><strong id="usageHits">—</strong></div><div><span>缓存命中率</span><strong id="usageRate">—</strong></div><div><span>知识库文档</span><strong id="usageDocs">—</strong></div></div><p class="modal-footnote">统计来自后端问答记录，知识库文档数量实时更新。</p></dialog>
+<dialog class="modal delete-dialog" id="deleteDialog" aria-labelledby="deleteTitle"><div class="modal-heading"><span class="eyebrow">KNOWLEDGE LIBRARY</span><button class="icon-button" data-close="deleteDialog" aria-label="取消删除"><svg class="icon"><use href="#i-close"/></svg></button></div><h2 id="deleteTitle">删除这份文档？</h2><p class="modal-intro" id="deleteDescription"></p><p class="modal-footnote">文档及对应的检索内容将从知识库移除。</p><div class="modal-actions"><button class="button secondary" data-close="deleteDialog">保留文档</button><button class="button danger" id="confirmDeleteBtn">确认删除</button></div></dialog>
+<noscript><div class="noscript">请启用 JavaScript 以使用评审与知识库功能。</div></noscript>
 </body>
 </html>

@@ -5,5 +5,6 @@ public enum ConfirmationStatus {
     APPROVED,
     REJECTED,
     EXPIRED,
-    EXECUTED
+    EXECUTED,
+    FAILED
 }

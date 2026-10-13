@@ -8,6 +8,8 @@ public record AgentProperties(
         int maxToolCalls,
         int runTimeoutSeconds,
         int recentMessageLimit,
-        int summaryTriggerCount
+        int summaryTriggerCount,
+        int maxMessageChars,
+        int compressedMessageMaxChars
 ) {
 }

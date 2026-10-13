@@ -30,6 +30,12 @@ public class AgentSession {
     @Column(columnDefinition = "TEXT")
     private String summary;
 
+    @Column(length = 32)
+    private String summaryPolicyVersion;
+
+    @Column(length = 64)
+    private String ownerBrowserSessionHash;
+
     private Long summaryThroughMessageId;
 
     @Column(columnDefinition = "TEXT")

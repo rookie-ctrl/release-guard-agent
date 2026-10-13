@@ -4,14 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class MockDevOpsGateway implements DevOpsGateway {
 
     private static final String DEMO_SERVICE = "order-service";
     private static final String DEMO_VERSION = "v2.3.7";
-    private final AtomicLong approvalSequence = new AtomicLong(1000);
+    private final MockApprovalStore approvals;
+
+    public MockDevOpsGateway(MockApprovalStore approvals) { this.approvals = approvals; }
 
     @Override
     public Object getReleaseInfo(String serviceName, String version) {
@@ -64,13 +65,20 @@ public class MockDevOpsGateway implements DevOpsGateway {
     }
 
     @Override
-    public Object createReleaseApproval(JsonNode request) {
+    public Object createReleaseApproval(String idempotencyKey, JsonNode request) {
         String serviceName = request.path("serviceName").asText();
         String version = request.path("version").asText();
-        requireDemoRelease(serviceName, version);
-        return Map.of("approvalId", "REL-" + approvalSequence.incrementAndGet(),
-                "serviceName", serviceName, "version", version, "status", "PENDING_REVIEW");
+        if (!DEMO_SERVICE.equals(serviceName) || !DEMO_VERSION.equals(version)) {
+            throw new ApprovalRejectedException("演示数据仅包含 order-service v2.3.7");
+        }
+        return approvals.create(idempotencyKey, request);
     }
+
+    @Override
+    public boolean supportsApprovalIdempotency() { return true; }
+
+    @Override
+    public java.util.Optional<Object> findReleaseApproval(String key) { return approvals.find(key).map(value -> value); }
 
     private void requireDemoRelease(String serviceName, String version) {
         if (!DEMO_SERVICE.equals(serviceName) || !DEMO_VERSION.equals(version)) {

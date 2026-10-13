@@ -40,10 +40,16 @@ public class AgentSessionService {
 
     @Transactional
     public AgentSession createSession(String userId, String pullRequestUrl) {
+        return createSession(userId, pullRequestUrl, null);
+    }
+
+    @Transactional
+    public AgentSession createSession(String userId, String pullRequestUrl, String ownerBrowserSessionHash) {
         AgentSession session = new AgentSession();
         session.setId(UUID.randomUUID().toString());
         session.setStatus(AgentStatus.CREATED);
         session.setUserId(userId);
+        session.setOwnerBrowserSessionHash(ownerBrowserSessionHash);
         if (pullRequestUrl != null && !pullRequestUrl.isBlank()) {
             session.setPullRequestContextJson(objectMapper.valueToTree(gitHubGateway.snapshot(pullRequestUrl)).toString());
         }

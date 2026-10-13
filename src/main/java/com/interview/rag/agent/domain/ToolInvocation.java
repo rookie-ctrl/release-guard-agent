@@ -48,6 +48,9 @@ public class ToolInvocation {
 
     private Long durationMs;
 
+    @Version
+    private Long version;
+
     @Column(columnDefinition = "TEXT")
     private String errorMessage;
 

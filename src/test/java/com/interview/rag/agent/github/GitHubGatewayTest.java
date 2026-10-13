@@ -91,6 +91,21 @@ class GitHubGatewayTest {
     }
 
     @Test
+    void mapsPartialDiffToActualHeadAndBaseSourceLines() {
+        ObjectNode file = mapper.createObjectNode().put("filename", "App.java").put("additions", 2)
+                .put("deletions", 1).put("patch", "@@ -10,2 +20,3 @@\n same\n-old\n+new\n+extra\n");
+        when(client.get(pullPath + "/files?per_page=20&page=1"))
+                .thenReturn(response(mapper.createArrayNode().add(file), false));
+        JsonNode coordinates = gateway.diff(snapshot, "App.java", 1, 3).path("lineCoordinates");
+        assertThat(coordinates.size()).isEqualTo(3);
+        assertThat(coordinates.get(0).path("patchLine").asInt()).isEqualTo(3);
+        assertThat(coordinates.get(0).path("baseLine").asInt()).isEqualTo(11);
+        assertThat(coordinates.get(0).has("headLine")).isFalse();
+        assertThat(coordinates.get(1).path("headLine").asInt()).isEqualTo(21);
+        assertThat(coordinates.get(2).path("headLine").asInt()).isEqualTo(22);
+    }
+
+    @Test
     void readsForkAtHeadAndTargetAtMergeBaseWithSourceLineNumbers() {
         when(client.get("/repos/fork/repo/contents/src/Order.java?ref=" + head))
                 .thenReturn(response(textFile("first\nsecond\nthird"), false));

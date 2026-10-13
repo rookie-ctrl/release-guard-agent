@@ -109,6 +109,18 @@ class GitHubClientTest {
     }
 
     @Test
+    void recognizesHttpClientTimeoutWrappedInExecutionException() {
+        HttpClient http = org.mockito.Mockito.mock(HttpClient.class);
+        org.mockito.Mockito.when(http.sendAsync(org.mockito.ArgumentMatchers.any(java.net.http.HttpRequest.class),
+                org.mockito.ArgumentMatchers.<java.net.http.HttpResponse.BodyHandler<byte[]>>any()))
+                .thenReturn(java.util.concurrent.CompletableFuture.failedFuture(
+                        new java.net.http.HttpTimeoutException("request timed out")));
+        var client = new GitHubClient(new GitHubProperties("", "2026-03-10", 1, 1024),
+                new ObjectMapper(), http, origin);
+        assertThatThrownBy(() -> client.get("/repos/a/b")).hasMessageContaining("超时");
+    }
+
+    @Test
     void rejectsRedirects() {
         status = 301;
         assertThatThrownBy(() -> client("", 1024).get("/repos/a/b")).hasMessageContaining("重定向");

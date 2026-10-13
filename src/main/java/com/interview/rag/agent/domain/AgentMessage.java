@@ -32,6 +32,12 @@ public class AgentMessage {
     @Column(nullable = false, columnDefinition = "LONGTEXT")
     private String content;
 
+    @Column(columnDefinition = "TEXT")
+    private String compressedContent;
+
+    @Column(length = 32)
+    private String compressedPolicyVersion;
+
     private Integer tokenCount;
 
     @CreationTimestamp

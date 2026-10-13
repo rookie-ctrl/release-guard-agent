@@ -91,7 +91,11 @@ rag:
     run-timeout-seconds: 180
     recent-message-limit: 12
     summary-trigger-count: 16
+    max-message-chars: 6000
+    compressed-message-max-chars: 2000
     outbox-poll-ms: 1000
+    run-recovery-poll-ms: 30000
+    approval-poll-ms: 1000
   storage:
     dir: ./data/docs
 

@@ -13,12 +13,16 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
+import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.*;
 
+@Slf4j
 @Service
 public class AgentRunner {
 
@@ -37,13 +41,17 @@ public class AgentRunner {
     private final AgentEventService eventService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry;
+    private final ReviewConclusionService conclusionService;
+    private final RunExecutionService executions;
+    private final Executor modelExecutor;
 
     public AgentRunner(AgentProperties properties, ChatModelManager chatModelManager, ToolRegistry toolRegistry,
                        ToolExecutionService toolExecutionService, ConversationMemoryService memoryService,
                        AgentSessionRepository sessionRepository, AgentRunRepository runRepository,
                        AgentStepRepository stepRepository, AgentMessageRepository messageRepository,
                        ConfirmationRequestRepository confirmationRepository, AgentEventService eventService,
-                       ObjectMapper objectMapper, MeterRegistry meterRegistry) {
+                       ObjectMapper objectMapper, MeterRegistry meterRegistry, ReviewConclusionService conclusionService,
+                       RunExecutionService executions, @Qualifier("agentModelExecutor") Executor modelExecutor) {
         this.properties = properties;
         this.chatModelManager = chatModelManager;
         this.toolRegistry = toolRegistry;
@@ -57,13 +65,16 @@ public class AgentRunner {
         this.eventService = eventService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        this.conclusionService = conclusionService;
+        this.executions = executions;
+        this.modelExecutor = modelExecutor;
     }
 
-    public void process(String runId) {
-        execute(runId);
+    public void process(String runId, AgentRunLease lease) {
+        execute(runId, lease);
     }
 
-    private void execute(String runId) {
+    private void execute(String runId, AgentRunLease lease) {
         long startedAt = System.currentTimeMillis();
         AgentRun run = requireRun(runId);
         if (run.getStatus() == AgentStatus.COMPLETED || run.getStatus() == AgentStatus.FAILED
@@ -72,10 +83,10 @@ public class AgentRunner {
             return;
         }
         meterRegistry.counter("releaseguard.agent.runs", "outcome", "started").increment();
-        eventService.publish(runId, "runStarted", Map.of("runId", runId));
         try {
+            lease.check();
             run.setStatus(AgentStatus.RUNNING);
-            runRepository.save(run);
+            executions.persist(run, lease, () -> eventService.publish(runId, "runStarted", Map.of("runId", runId)));
             List<ChatMessage> messages = memoryService.buildMessages(run.getSessionId());
             boolean pullRequestMode = sessionRepository.findById(run.getSessionId()).orElseThrow()
                     .getPullRequestContextJson() != null;
@@ -84,21 +95,26 @@ public class AgentRunner {
                     ? "正在读取 GitHub PR、代码变更、CI 和知识库规范" : "正在检查演示发布信息、测试、数据库变更和服务依赖"));
 
             for (int step = 0; step < properties.maxSteps(); step++) {
+                lease.check();
                 if (System.currentTimeMillis() - startedAt > properties.runTimeoutSeconds() * 1000L) {
                     throw new IllegalStateException("Agent 执行超过总时限");
                 }
-                ChatResponse response = chatModelManager.nonStreamingChatModel().chat(ChatRequest.builder()
+                ChatResponse response = callModel(ChatRequest.builder()
                         .messages(messages)
                         .toolSpecifications(toolRegistry.specifications(pullRequestMode))
-                        .build());
+                        .build(), lease);
+                lease.check();
                 AiMessage aiMessage = response.aiMessage();
                 messages.add(aiMessage);
                 if (!aiMessage.hasToolExecutionRequests()) {
-                    completeRun(run, aiMessage.text(), startedAt, response);
+                    String answer = pullRequestMode
+                            ? conclusionService.validateAndRender(run, aiMessage.text()) : aiMessage.text();
+                    completeRun(run, answer, startedAt, response, lease);
                     return;
                 }
 
                 for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
+                    lease.check();
                     if (!toolRegistry.allowedInMode(request.name(), pullRequestMode)) {
                         throw new ToolExecutionException("当前评审模式不允许调用工具：" + request.name());
                     }
@@ -106,54 +122,70 @@ public class AgentRunner {
                         throw new IllegalStateException("Agent 工具调用次数超过限制");
                     }
                     run.setToolCallCount(toolCalls);
-                    runRepository.save(run);
+                    executions.persist(run, lease, () -> {});
                     AgentTool tool = toolRegistry.get(request.name());
+                    toolExecutionService.validateArguments(request.arguments(), tool.definition());
                     eventService.publish(runId, "toolCall", Map.of("tool", request.name(),
                             "riskLevel", tool.definition().riskLevel(), "arguments", parseJson(request.arguments())));
 
                     if (tool.definition().riskLevel() == ToolRiskLevel.HIGH_RISK) {
-                        requestConfirmation(run, request);
+                        requestConfirmation(run, request, lease);
                         return;
                     }
 
-                    ToolResult result = toolExecutionService.execute(runId, request.name(), request.arguments());
-                    String resultJson = objectMapper.writeValueAsString(result.value());
+                    ToolResult result = toolExecutionService.execute(runId, request.name(), request.arguments(), lease::check);
+                    lease.check();
+                    String resultJson = objectMapper.writeValueAsString(Map.of(
+                            "evidenceId", result.invocationId(), "tool", request.name(), "data", result.value()));
                     if (resultJson.length() > MAX_TOOL_RESULT_CHARS) {
                         resultJson = objectMapper.writeValueAsString(Map.of("truncated", true,
+                                "evidenceId", result.invocationId(),
                                 "reason", "工具结果超过上下文限制，只显示片段，不能视为完整检查",
                                 "preview", resultJson.substring(0, 5000)));
                     }
-                    persistStep(run, AgentStepType.TOOL_CALL, ExecutionStatus.SUCCESS,
-                            request.arguments(), resultJson, result.durationMs());
-                    eventService.publish(runId, "toolResult", Map.of("tool", request.name(),
-                            "result", result.value(), "durationMs", result.durationMs(), "replayed", result.replayed()));
                     messages.add(ToolExecutionResultMessage.from(request, resultJson));
                     AgentMessage observation = new AgentMessage();
                     observation.setSessionId(run.getSessionId());
                     observation.setRunId(runId);
                     observation.setRole(MessageRole.TOOL);
                     observation.setContent(request.name() + " " + request.arguments() + "\n" + resultJson);
-                    messageRepository.save(observation);
+                    AgentStep savedStep = prepareStep(run, AgentStepType.TOOL_CALL, ExecutionStatus.SUCCESS,
+                            request.arguments(), resultJson, result.durationMs());
+                    executions.persist(run, lease, () -> {
+                        stepRepository.save(savedStep);
+                        messageRepository.save(observation);
+                        eventService.publish(runId, "toolResult", Map.of("tool", request.name(),
+                                "result", result.value(), "durationMs", result.durationMs(), "replayed", result.replayed()));
+                    });
                 }
             }
             throw new IllegalStateException("Agent 推理轮数超过限制");
+        } catch (ExecutionLostException e) {
+            log.warn("Run {} 当前工作者停止: {}", runId, e.getMessage());
         } catch (Exception e) {
-            run.setStatus(AgentStatus.FAILED);
-            run.setErrorMessage(e.getMessage());
-            run.setElapsedMs(System.currentTimeMillis() - startedAt);
-            runRepository.save(run);
-            meterRegistry.counter("releaseguard.agent.runs", "outcome", "failed").increment();
-            sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
-                session.setStatus(AgentStatus.FAILED);
-                sessionRepository.save(session);
-            });
-            persistStep(run, AgentStepType.ERROR, ExecutionStatus.FAILED, "{}", e.getMessage(), 0L);
-            eventService.publish(runId, "runFailed", Map.of("message", safeMessage(e)));
-            eventService.complete(runId);
+            try {
+                lease.check();
+                run.setStatus(AgentStatus.FAILED);
+                run.setErrorMessage(e.getMessage());
+                run.setElapsedMs(System.currentTimeMillis() - startedAt);
+                AgentStep errorStep = prepareStep(run, AgentStepType.ERROR, ExecutionStatus.FAILED, "{}", e.getMessage(), 0L);
+                executions.persist(run, lease, () -> {
+                    stepRepository.save(errorStep);
+                    meterRegistry.counter("releaseguard.agent.runs", "outcome", "failed").increment();
+                    sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
+                        session.setStatus(AgentStatus.FAILED);
+                        sessionRepository.save(session);
+                    });
+                    eventService.publish(runId, "runFailed", Map.of("message", safeMessage(e)));
+                });
+                eventService.complete(runId);
+            } catch (ExecutionLostException lost) {
+                log.warn("Run {} 异常处理时已失去执行权，跳过 FAILED 更新", runId);
+            }
         }
     }
 
-    private void requestConfirmation(AgentRun run, ToolExecutionRequest request) throws Exception {
+    private void requestConfirmation(AgentRun run, ToolExecutionRequest request, AgentRunLease lease) throws Exception {
         String rawToken = UUID.randomUUID().toString();
         ConfirmationRequest confirmation = new ConfirmationRequest();
         confirmation.setId(UUID.randomUUID().toString());
@@ -164,25 +196,28 @@ public class AgentRunner {
         confirmation.setTokenHash(sha256(rawToken));
         confirmation.setStatus(ConfirmationStatus.PENDING);
         confirmation.setExpiresAt(LocalDateTime.now().plusMinutes(10));
-        confirmationRepository.save(confirmation);
 
         run.setStatus(AgentStatus.WAITING_CONFIRMATION);
         run.setErrorMessage(null);
-        runRepository.save(run);
-        sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
-            session.setStatus(AgentStatus.WAITING_CONFIRMATION);
-            sessionRepository.save(session);
-        });
-        persistStep(run, AgentStepType.CONFIRMATION, ExecutionStatus.PENDING,
+        AgentStep confirmationStep = prepareStep(run, AgentStepType.CONFIRMATION, ExecutionStatus.PENDING,
                 request.arguments(), confirmation.getId(), 0L);
-        eventService.publish(run.getId(), "confirmation", Map.of(
-                "confirmationId", confirmation.getId(), "token", rawToken,
-                "tool", request.name(), "arguments", parseJson(request.arguments()),
-                "expiresAt", confirmation.getExpiresAt().toString()));
-        meterRegistry.counter("releaseguard.agent.runs", "outcome", "waiting_confirmation").increment();
+        executions.persist(run, lease, () -> {
+            confirmationRepository.save(confirmation);
+            stepRepository.save(confirmationStep);
+            sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
+                session.setStatus(AgentStatus.WAITING_CONFIRMATION);
+                sessionRepository.save(session);
+            });
+            eventService.publish(run.getId(), "confirmation", Map.of(
+                    "confirmationId", confirmation.getId(), "token", rawToken,
+                    "tool", request.name(), "arguments", parseJson(request.arguments()),
+                    "expiresAt", confirmation.getExpiresAt().toString()));
+            meterRegistry.counter("releaseguard.agent.runs", "outcome", "waiting_confirmation").increment();
+        });
     }
 
-    private void completeRun(AgentRun run, String answer, long startedAt, ChatResponse response) {
+    private void completeRun(AgentRun run, String answer, long startedAt, ChatResponse response, AgentRunLease lease) {
+        lease.check();
         String finalAnswer = answer == null || answer.isBlank() ? "评审完成，但模型未返回文本结论。" : answer;
         run.setStatus(AgentStatus.COMPLETED);
         run.setFinalAnswer(finalAnswer);
@@ -191,27 +226,29 @@ public class AgentRunner {
             run.setInputTokens((long) response.tokenUsage().inputTokenCount());
             run.setOutputTokens((long) response.tokenUsage().outputTokenCount());
         }
-        runRepository.save(run);
-        meterRegistry.counter("releaseguard.agent.runs", "outcome", "completed").increment();
-        AgentMessage assistant = new AgentMessage();
-        assistant.setSessionId(run.getSessionId());
-        assistant.setRunId(run.getId());
-        assistant.setRole(MessageRole.ASSISTANT);
-        assistant.setContent(finalAnswer);
-        messageRepository.save(assistant);
-        sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
-            session.setStatus(AgentStatus.COMPLETED);
-            sessionRepository.save(session);
-        });
-        persistStep(run, AgentStepType.FINAL_ANSWER, ExecutionStatus.SUCCESS, "{}", finalAnswer,
+        AgentStep finalStep = prepareStep(run, AgentStepType.FINAL_ANSWER, ExecutionStatus.SUCCESS, "{}", finalAnswer,
                 run.getElapsedMs());
-        eventService.publish(run.getId(), "token", Map.of("text", finalAnswer));
-        eventService.publish(run.getId(), "runCompleted", Map.of("runId", run.getId(),
-                "elapsedMs", run.getElapsedMs()));
+        executions.persist(run, lease, () -> {
+            stepRepository.save(finalStep);
+            meterRegistry.counter("releaseguard.agent.runs", "outcome", "completed").increment();
+            AgentMessage assistant = new AgentMessage();
+            assistant.setSessionId(run.getSessionId());
+            assistant.setRunId(run.getId());
+            assistant.setRole(MessageRole.ASSISTANT);
+            assistant.setContent(finalAnswer);
+            messageRepository.save(assistant);
+            sessionRepository.findById(run.getSessionId()).ifPresent(session -> {
+                session.setStatus(AgentStatus.COMPLETED);
+                sessionRepository.save(session);
+            });
+            eventService.publish(run.getId(), "token", Map.of("text", finalAnswer));
+            eventService.publish(run.getId(), "runCompleted", Map.of("runId", run.getId(),
+                    "elapsedMs", run.getElapsedMs()));
+        });
         eventService.complete(run.getId());
     }
 
-    private void persistStep(AgentRun run, AgentStepType type, ExecutionStatus status,
+    private AgentStep prepareStep(AgentRun run, AgentStepType type, ExecutionStatus status,
                              String input, String output, Long durationMs) {
         AgentStep step = new AgentStep();
         step.setRunId(run.getId());
@@ -222,9 +259,8 @@ public class AgentRunner {
         step.setInputJson(input);
         step.setOutputJson(output == null ? "" : output);
         step.setDurationMs(durationMs);
-        stepRepository.save(step);
         run.setCurrentStep(sequence);
-        runRepository.save(run);
+        return step;
     }
 
     private JsonNode parseJson(String json) {
@@ -251,5 +287,24 @@ public class AgentRunner {
     private String safeMessage(Exception error) {
         String message = error.getMessage();
         return message == null || message.isBlank() ? "Agent 执行失败" : message;
+    }
+
+    private ChatResponse callModel(ChatRequest request, AgentRunLease lease) throws Exception {
+        CompletableFuture<ChatResponse> future = CompletableFuture.supplyAsync(() -> {
+            lease.check();
+            return chatModelManager.nonStreamingChatModel().chat(request);
+        }, modelExecutor);
+        try {
+            return future.get(lease.remainingMillis(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException e) {
+            throw e.getCause() instanceof Exception cause ? cause : e;
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new ExecutionLostException("模型请求达到独立执行截止时间");
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new ExecutionLostException("Agent 执行已中断");
+        }
     }
 }

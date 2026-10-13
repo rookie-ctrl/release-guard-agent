@@ -16,5 +16,11 @@ public interface DevOpsGateway {
 
     Object getServiceMetrics(String serviceName);
 
-    Object createReleaseApproval(JsonNode request);
+    Object createReleaseApproval(String idempotencyKey, JsonNode request);
+
+    default boolean supportsApprovalIdempotency() { return false; }
+
+    default java.util.Optional<Object> findReleaseApproval(String idempotencyKey) {
+        return java.util.Optional.empty();
+    }
 }
